@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ApplyPilot Dashboard</title>
+    <link rel="stylesheet" href="./dashboard.css" />
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="brand">
+        <h1>ApplyPilot</h1>
+        <span id="state-badge" class="badge">idle</span>
+      </div>
+      <nav class="tabs">
+        <button class="tab active" data-tab="overview">Overview</button>
+        <button class="tab" data-tab="applied">Applied</button>
+        <button class="tab" data-tab="attention">Needs Attention</button>
+        <button class="tab" data-tab="skipped">Skipped</button>
+        <button class="tab" data-tab="settings">Settings</button>
+      </nav>
+      <div class="run-controls">
+        <button id="run-btn" class="primary">Run Now</button>
+        <div class="row">
+          <button id="pause-btn">Pause</button>
+          <button id="stop-btn" class="danger">Stop</button>
+        </div>
+      </div>
+    </aside>
+
+    <main>
+      <!-- Blocked/error banner -->
+      <div id="banner" class="banner" hidden></div>
+
+      <!-- OVERVIEW -->
+      <section id="tab-overview" class="panel active">
+        <h2>Overview</h2>
+        <p id="status-line" class="muted"></p>
+        <div class="stat-grid" id="stat-grid"></div>
+        <h3>Applications per day</h3>
+        <div id="chart" class="chart"></div>
+        <h3>Recent runs</h3>
+        <div id="runs-list"></div>
+      </section>
+
+      <!-- APPLIED -->
+      <section id="tab-applied" class="panel">
+        <h2>Applied</h2>
+        <div id="applied-table"></div>
+      </section>
+
+      <!-- NEEDS ATTENTION -->
+      <section id="tab-attention" class="panel">
+        <h2>Needs Attention</h2>
+        <p class="muted">
+          Jobs that couldn't be auto-completed (external ATS, deferred or
+          high-stakes screening questions). Open each and finish manually.
+        </p>
+        <div id="attention-list"></div>
+      </section>
+
+      <!-- SKIPPED -->
+      <section id="tab-skipped" class="panel">
+        <h2>Skipped &amp; Failed</h2>
+        <div id="skipped-table"></div>
+      </section>
+
+      <!-- SETTINGS -->
+      <section id="tab-settings" class="panel">
+        <h2>Settings</h2>
+
+        <div class="card">
+          <h3>1 · Resume</h3>
+          <input type="file" id="resume-file" accept=".pdf,.docx" />
+          <button id="analyze-btn" class="primary">Upload &amp; Analyze</button>
+          <span id="resume-status" class="muted"></span>
+
+          <div id="analysis" hidden>
+            <p>
+              <strong>Resume score:</strong>
+              <span id="resume-score"></span> / 10
+            </p>
+            <details open>
+              <summary>Improvement feedback</summary>
+              <ul id="feedback-list"></ul>
+            </details>
+            <p><strong>Skills</strong> (edit, then Accept):</p>
+            <div id="skills-chips" class="chips"></div>
+            <div class="row">
+              <input
+                type="text"
+                id="add-skill"
+                placeholder="Add a skill and press Enter"
+              />
+            </div>
+            <button id="accept-skills" class="primary">Accept Skills</button>
+            <span id="skills-accepted-note" class="muted"></span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>2 · Profile</h3>
+          <div class="form-grid">
+            <label>Full name<input type="text" id="p-name" /></label>
+            <label>Email<input type="email" id="p-email" /></label>
+            <label>Phone<input type="tel" id="p-phone" /></label>
+            <label>Location<input type="text" id="p-location" /></label>
+            <label class="full"
+              >Work authorization<input
+                type="text"
+                id="p-workauth"
+                placeholder="e.g. US Citizen / Requires sponsorship"
+            /></label>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>3 · Search &amp; run parameters</h3>
+          <div class="form-grid">
+            <label class="full"
+              >Keywords (comma-separated)<input
+                type="text"
+                id="c-keywords"
+                placeholder="frontend engineer, react"
+            /></label>
+            <label class="full"
+              >Exclude keywords (comma-separated)<input
+                type="text"
+                id="c-exclude"
+                placeholder="senior, clearance"
+            /></label>
+            <label>Location<input type="text" id="c-location" /></label>
+            <label
+              >Work mode
+              <select id="c-workmode">
+                <option value="any">Any</option>
+                <option value="remote">Remote</option>
+                <option value="local">Local / On-site</option>
+                <option value="hybrid">Hybrid</option>
+              </select>
+            </label>
+            <label>Radius (miles)<input type="number" id="c-radius" /></label>
+            <label>Salary floor ($/yr)<input type="number" id="c-salary" /></label>
+            <label
+              >Experience level
+              <select id="c-explvl">
+                <option value="any">Any</option>
+                <option value="entry_level">Entry</option>
+                <option value="mid_level">Mid</option>
+                <option value="senior_level">Senior</option>
+              </select>
+            </label>
+            <label
+              >Match threshold (0–100)<input type="number" id="c-threshold"
+            /></label>
+            <label>Max per run<input type="number" id="c-maxperrun" /></label>
+            <label>Daily cap<input type="number" id="c-dailycap" /></label>
+            <label
+              >Screening mode
+              <select id="c-screening">
+                <option value="defer">Defer (I answer manually)</option>
+                <option value="ai">AI answers (Claude)</option>
+              </select>
+            </label>
+            <label class="checkbox full"
+              ><input type="checkbox" id="c-defer-high" /> Defer high-stakes
+              questions (visa, salary, years of experience) even in AI mode</label
+            >
+            <label class="checkbox"
+              ><input type="checkbox" id="c-schedule" /> Run on a schedule</label
+            >
+            <label
+              >Every (minutes)<input type="number" id="c-schedule-mins"
+            /></label>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>4 · Anthropic API key</h3>
+          <input
+            type="password"
+            id="api-key"
+            placeholder="sk-ant-..."
+            autocomplete="off"
+          />
+          <p class="warn">
+            ⚠ Stored in <code>chrome.storage.local</code> on this device only.
+            The browser does <strong>not</strong> encrypt it at rest. Anyone with
+            access to this profile can read it.
+          </p>
+        </div>
+
+        <div class="card danger-card">
+          <h3>5 · Kill switch</h3>
+          <p class="muted">
+            Immediately halts any in-progress run. Same as Stop in the toolbar.
+          </p>
+          <button id="kill-btn" class="danger">STOP everything now</button>
+        </div>
+
+        <div class="save-bar">
+          <button id="save-settings" class="primary">Save settings</button>
+          <span id="save-note" class="muted"></span>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="./dashboard.ts"></script>
+  </body>
+</html>

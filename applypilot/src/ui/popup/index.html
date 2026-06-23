@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ApplyPilot</title>
+    <link rel="stylesheet" href="./popup.css" />
+  </head>
+  <body>
+    <header>
+      <h1>ApplyPilot</h1>
+      <span id="state-badge" class="badge">idle</span>
+    </header>
+
+    <p id="status-message" class="status-message">Idle</p>
+
+    <div id="progress-wrap" class="progress-wrap" hidden>
+      <div class="progress-bar"><div id="progress-fill"></div></div>
+      <span id="progress-text"></span>
+    </div>
+
+    <div class="actions">
+      <button id="run-btn" class="primary">Run Now</button>
+      <button id="pause-btn">Pause</button>
+      <button id="stop-btn" class="danger">Stop</button>
+    </div>
+
+    <a id="open-dashboard" href="#" class="link">Open dashboard →</a>
+
+    <script type="module" src="./popup.ts"></script>
+  </body>
+</html>

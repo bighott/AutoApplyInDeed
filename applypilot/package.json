@@ -1,0 +1,27 @@
+{
+  "name": "applypilot",
+  "version": "0.1.0",
+  "description": "Manifest V3 Chrome extension that finds, ranks, and auto-applies to Indeed 'Easily apply' jobs, with a tracking dashboard. Powered by your own Anthropic API key.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --ext .ts",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "mammoth": "^1.8.0",
+    "pdfjs-dist": "^4.7.76"
+  },
+  "devDependencies": {
+    "@crxjs/vite-plugin": "^2.0.0-beta.28",
+    "@types/chrome": "^0.0.270",
+    "@typescript-eslint/eslint-plugin": "^7.16.0",
+    "@typescript-eslint/parser": "^7.16.0",
+    "eslint": "^8.57.0",
+    "typescript": "^5.5.3",
+    "vite": "^5.3.3"
+  }
+}
