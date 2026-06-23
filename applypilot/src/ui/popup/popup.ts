@@ -69,7 +69,8 @@ stopBtn.addEventListener('click', () => send({ type: 'STOP' }));
 
 openDashboard.addEventListener('click', (e) => {
   e.preventDefault();
-  chrome.tabs.create({ url: chrome.runtime.getURL('src/ui/dashboard/index.html') });
+  // The dashboard is registered as the extension's options page.
+  chrome.runtime.openOptionsPage();
 });
 
 // Live updates from background's status writes.

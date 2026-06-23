@@ -54,18 +54,49 @@ import { applicationDelay, paginationDelay, sleep } from '../lib/throttle';
 
 async function updateStatus(patch: Partial<RuntimeStatus>): Promise<void> {
   const current = await getStatus();
-  await setStatus({
+  const next: RuntimeStatus = {
     ...current,
     ...patch,
     updatedAt: new Date().toISOString(),
-  });
+  };
+  await setStatus(next);
+  setBadge(next);
 }
 
-/** Returns true if the run should stop right now (Stop pressed or paused). */
-async function aborted(): Promise<boolean> {
-  if (await getKillSwitch()) return true;
-  const status = await getStatus();
-  return status.state === 'paused' || status.state === 'idle';
+/** Reflect the run state on the toolbar icon badge for at-a-glance status. */
+function setBadge(status: RuntimeStatus): void {
+  const map: Record<string, { text: string; color: string }> = {
+    running: { text: 'RUN', color: '#2557a7' },
+    paused: { text: 'II', color: '#b45309' },
+    blocked: { text: '!', color: '#b91c1c' },
+    error: { text: 'ERR', color: '#b91c1c' },
+    idle: { text: '', color: '#6b7280' },
+  };
+  const m = map[status.state] || map.idle;
+  void chrome.action.setBadgeText({ text: m.text });
+  void chrome.action.setBadgeBackgroundColor({ color: m.color });
+}
+
+/** True only when the user pressed Stop (kill switch). Pause is handled separately. */
+async function shouldStop(): Promise<boolean> {
+  return getKillSwitch();
+}
+
+/**
+ * Run checkpoint: blocks while the run is paused (polling storage every 500ms,
+ * which also keeps the service worker alive), and returns 'stop' if the user
+ * pressed Stop. Real pause/resume — the loop holds here instead of unwinding.
+ */
+async function runGate(): Promise<'go' | 'stop'> {
+  for (;;) {
+    if (await getKillSwitch()) return 'stop';
+    const status = await getStatus();
+    if (status.state === 'paused') {
+      await sleep(500);
+      continue;
+    }
+    return 'go';
+  }
 }
 
 // --- Indeed URL building ------------------------------------------------------
@@ -210,7 +241,7 @@ async function startRun(trigger: RunStats['trigger']): Promise<void> {
     const maxPages = 10; // safety bound
 
     pageLoop: while (page < maxPages && appliedThisRun < config.maxPerRun) {
-      if (await aborted()) {
+      if ((await runGate()) === 'stop') {
         await log('info', 'Run stopped by user.');
         break;
       }
@@ -245,7 +276,7 @@ async function startRun(trigger: RunStats['trigger']): Promise<void> {
       }
 
       for (const listing of scrape.listings) {
-        if (await aborted()) break pageLoop;
+        if ((await runGate()) === 'stop') break pageLoop;
         if (appliedThisRun >= config.maxPerRun) break pageLoop;
 
         stats.counts.scanned++;
@@ -344,8 +375,8 @@ async function startRun(trigger: RunStats['trigger']): Promise<void> {
           break pageLoop;
         }
 
-        // Human-like spacing between applications.
-        const proceed = await applicationDelay(aborted);
+        // Human-like spacing between applications (interruptible by Stop).
+        const proceed = await applicationDelay(shouldStop);
         if (!proceed) break pageLoop;
       }
 
@@ -354,7 +385,7 @@ async function startRun(trigger: RunStats['trigger']): Promise<void> {
         break;
       }
       page++;
-      const proceed = await paginationDelay(aborted);
+      const proceed = await paginationDelay(shouldStop);
       if (!proceed) break;
     }
 
@@ -515,7 +546,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     case 'RESUME':
       void (async () => {
         await setKillSwitch(false);
-        await updateStatus({ state: 'idle', message: 'Idle.' });
+        // Resume a paused run if one is live; otherwise just go idle.
+        await updateStatus(
+          runInProgress
+            ? { state: 'running', message: 'Resumed.' }
+            : { state: 'idle', message: 'Idle.' },
+        );
         sendResponse({ ok: true });
       })();
       return true;

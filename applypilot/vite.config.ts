@@ -13,14 +13,9 @@ export default defineConfig({
   plugins: [crx({ manifest: manifest as unknown as Parameters<typeof crx>[0]['manifest'] })],
   build: {
     outDir: 'dist',
+    // The dashboard is the manifest's options_page, so crxjs bundles it (and
+    // its pdfjs/mammoth deps) automatically — no manual input needed.
     rollupOptions: {
-      // The dashboard is an extension page opened via chrome.runtime.getURL
-      // (not referenced in the manifest), so it must be declared as an explicit
-      // HTML input or crxjs won't bundle its script/deps. The popup IS in the
-      // manifest (action.default_popup), so crxjs handles it automatically.
-      input: {
-        dashboard: 'src/ui/dashboard/index.html',
-      },
       output: {
         chunkFileNames: 'assets/[name].js',
       },

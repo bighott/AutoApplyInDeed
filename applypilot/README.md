@@ -86,7 +86,12 @@ Then in Chrome:
 1. Go to `chrome://extensions`.
 2. Toggle **Developer mode** (top-right) on.
 3. Click **Load unpacked** and select the `applypilot/dist` folder.
-4. Pin the ApplyPilot icon. Click it → **Open dashboard**.
+4. Pin the ApplyPilot icon. Click it → **Open dashboard** (the dashboard is also
+   registered as the extension's **options page**: `Details → Extension
+   options`).
+
+The toolbar icon shows a live status **badge**: `RUN` (running), `II` (paused),
+`!` (blocked/captcha), `ERR` (error), or empty (idle).
 
 For live development with HMR:
 
@@ -162,7 +167,9 @@ These are the brittle spots; all live in `content/dom-selectors.ts`:
 
 Any of these halt ApplyPilot immediately:
 
-- **Toolbar popup → Stop**, or **Pause** (then **Resume** later).
+- **Toolbar popup → Stop** ends the run; **Pause** truly holds the run at the
+  next checkpoint and **Resume** continues it from where it left off (the run
+  loop blocks while paused rather than unwinding).
 - **Dashboard → Settings → Kill switch → "STOP everything now"**, or the
   **Stop** button in the sidebar.
 - Disable **Run on a schedule** in Settings and **Save** (clears the alarm).
@@ -202,6 +209,13 @@ Use responsibly, sparingly, and at your own risk.
 
 ---
 
+## Icons
+
+The toolbar/extension icons are generated (no binary blobs checked in by hand)
+by `scripts/generate-icons.mjs` — run `node scripts/generate-icons.mjs` to
+regenerate `icons/icon{16,32,48,128}.png`.
+
 ## License
 
-For personal/educational use. No warranty of any kind.
+[MIT](./LICENSE) — provided for educational use, with no warranty. Automating
+Indeed may violate its Terms of Service; use at your own risk.
