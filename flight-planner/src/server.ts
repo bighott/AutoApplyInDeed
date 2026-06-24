@@ -228,6 +228,7 @@ function toAdvisorSpec(raw: any): AdvisorSpec {
     latestReturn,
     totalNights,
     returnToOrigin: raw.returnToOrigin !== false,
+    optimizeGeography: raw.optimizeGeography !== false,
     adults: Math.max(1, Number(raw.adults) || 1),
     cabin,
     currency: raw.currency ? String(raw.currency).toUpperCase() : 'USD',

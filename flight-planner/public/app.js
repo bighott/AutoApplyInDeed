@@ -291,6 +291,7 @@ function readAdvisorSpec(){
   if(!destinations.length) throw new Error('Add at least one place to visit.');
   return { origins, destinations, startDate:val('a-startDate'), latestReturn:val('a-latestReturn')||undefined,
     totalNights:Number(val('a-totalNights')), returnToOrigin:$('a-returnToOrigin').checked,
+    optimizeGeography:$('a-optimizeGeography').checked,
     adults:Number(val('a-adults')), cabin:val('a-cabin'), currency:val('a-currency').trim().toUpperCase()||'USD' };
 }
 
@@ -354,7 +355,7 @@ function renderAdvisor(){
   }).join('');
   const seg=(k,lab)=>`<button class="${ASTATE.sort===k?'act':''}" data-asort="${k}">${lab}</button>`;
   let html=`<div class="toolbar"><span class="lbl">Top 5 by</span><div class="seg">${seg('price','Cheapest')}${seg('time','Fastest')}${seg('value','Best value')}</div>`+
-    `<span class="lbl" style="margin-left:auto">tried ${r.permutationsTried} orders · ${r.routesConsidered.toLocaleString()} routes · ${r.queriesRun} searches</span></div>`;
+    `<span class="lbl" style="margin-left:auto">${r.ordersPriced}/${r.permutationsTried} orders · ${r.routesConsidered.toLocaleString()} routes · ${r.queriesRun} searches</span></div>`;
   if(r.sampled) html+=`<div class="banner warn">Wide search: I sampled start dates (every ${r.dateStepDays} day${r.dateStepDays===1?'':'s'}) and some trip-length splits to stay fast. Narrow the date window or set per-place night ranges for finer results.</div>`;
   html+=cards;
   html+=`<details><summary>More routes (${r.allItineraries.length})</summary><table><thead><tr><th>#</th><th class="num">Total</th><th class="num">Time</th><th>Route</th><th>Nights</th><th>Start</th></tr></thead><tbody>`+

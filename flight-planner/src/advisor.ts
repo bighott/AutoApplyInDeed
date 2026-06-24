@@ -20,6 +20,7 @@ import {
   legKey,
   type FlightProvider,
 } from './planner';
+import { coordsOf, haversineKm } from './airports';
 import type { FlightQuote, ItineraryResult, LegQuery, PricedLeg } from './types';
 
 export interface AdvisorDestination {
@@ -42,6 +43,8 @@ export interface AdvisorSpec {
   /** Total nights for the whole trip. */
   totalNights: number;
   returnToOrigin: boolean;
+  /** Prune geographically inefficient city orders before pricing (default true). */
+  optimizeGeography?: boolean;
   adults: number;
   cabin: string;
   currency?: string;
@@ -54,6 +57,8 @@ export interface AdvisorResult {
   allItineraries: ItineraryResult[];
   queriesRun: number;
   permutationsTried: number;
+  /** City orders actually priced after geographic pruning. */
+  ordersPriced: number;
   /** Total candidate routes enumerated before pricing. */
   routesConsidered: number;
   /** True if the date/length grid was sampled to stay efficient. */
@@ -176,6 +181,44 @@ export interface AdvisorEnumeration {
   sampled: boolean;
   /** Days between sampled start dates (1 = every day). */
   dateStepDays: number;
+  /** All possible city orders (k!). */
+  ordersConsidered: number;
+  /** City orders actually priced after geographic pruning. */
+  ordersPriced: number;
+}
+
+/**
+ * Geographic route cost (km): origin → cities → origin, using the nearest origin
+ * for each end. Used to keep only sensible city orders instead of pricing every
+ * permutation — improves routing and cuts searches.
+ */
+function geoCost(perm: AdvisorDestination[], origins: string[]): number {
+  let s = 0;
+  for (let i = 0; i < perm.length - 1; i++) {
+    s += haversineKm(coordsOf(perm[i].code)!, coordsOf(perm[i + 1].code)!);
+  }
+  const oc = origins.map(coordsOf).filter((c): c is [number, number] => !!c);
+  if (oc.length) {
+    s += Math.min(...oc.map((o) => haversineKm(o, coordsOf(perm[0].code)!)));
+    s += Math.min(...oc.map((o) => haversineKm(coordsOf(perm[perm.length - 1].code)!, o)));
+  }
+  return s;
+}
+
+/** Pick the geographically sensible city orders (within 25% of the best, capped). */
+function selectOrders(
+  allPerms: AdvisorDestination[][],
+  origins: string[],
+  enabled: boolean,
+): AdvisorDestination[][] {
+  const haveCoords = allPerms[0].every((d) => coordsOf(d.code));
+  if (!enabled || !haveCoords || allPerms[0].length < 3) return allPerms;
+  const scored = allPerms
+    .map((p) => ({ p, c: geoCost(p, origins) }))
+    .sort((a, b) => a.c - b.c);
+  const best = scored[0].c;
+  const kept = scored.filter((s) => s.c <= best * 1.25).slice(0, 8).map((s) => s.p);
+  return kept.length ? kept : [scored[0].p];
 }
 
 /**
@@ -187,7 +230,8 @@ export interface AdvisorEnumeration {
 export function enumerateAdvisor(spec: AdvisorSpec, maxRoutes: number): AdvisorEnumeration {
   const origins = [...new Set(spec.origins.filter(Boolean))];
   const dests = spec.destinations;
-  const perms = permute(dests);
+  const allPerms = permute(dests);
+  const perms = selectOrders(allPerms, origins, spec.optimizeGeography !== false);
   const total = spec.totalNights;
 
   const slack = spec.latestReturn
@@ -253,7 +297,13 @@ export function enumerateAdvisor(spec: AdvisorSpec, maxRoutes: number): AdvisorE
       }
     }
   }
-  return { skeletons: out, sampled, dateStepDays: step };
+  return {
+    skeletons: out,
+    sampled,
+    dateStepDays: step,
+    ordersConsidered: allPerms.length,
+    ordersPriced: perms.length,
+  };
 }
 
 export async function planAdvisor(
@@ -274,7 +324,10 @@ export async function planAdvisor(
     );
   }
 
-  const { skeletons, sampled, dateStepDays } = enumerateAdvisor(spec, options.maxRoutes ?? 80000);
+  const { skeletons, sampled, dateStepDays, ordersPriced } = enumerateAdvisor(
+    spec,
+    options.maxRoutes ?? 80000,
+  );
   const queries = uniqueLegQueries(skeletons);
   const searchOpts = { adults: spec.adults, cabin: spec.cabin, currency };
   const maxSearches = options.maxSearches ?? Infinity;
@@ -317,6 +370,7 @@ export async function planAdvisor(
     allItineraries: results.slice(0, options.maxResults ?? 50),
     queriesRun: queries.length,
     permutationsTried: factorial(spec.destinations.length),
+    ordersPriced,
     routesConsidered: skeletons.length,
     sampled,
     dateStepDays,
