@@ -236,11 +236,29 @@ function tripCard(it,rank,badges){
   </div>`;
 }
 
+function legMatrixHtml(plan, cur){
+  const byRoute={}; for(const l of plan.legGrid){ (byRoute[`${l.origin}→${l.destination}`]||=[]).push(l); }
+  let html=`<table><tbody>`;
+  for(const [route,legs] of Object.entries(byRoute)){
+    const priced=legs.filter(l=>l.quote); const minP=priced.length?Math.min(...priced.map(l=>l.quote.price)):null;
+    const cells=legs.slice().sort((a,b)=>a.date.localeCompare(b.date)).map(l=>{
+      if(!l.quote) return `<span class="meta">${l.date}: —</span>`;
+      const cheap=l.quote.price===minP?'cheapday':'';
+      return `<span class="${cheap}">${l.date}: ${money(l.quote.price,cur)}</span> <span class="meta">(${fmtMins(l.quote.durationMinutes)})</span>`;
+    }).join(' &nbsp; ');
+    html+=`<tr><td><b>${route}</b></td><td>${cells}</td></tr>`;
+  }
+  return html+`</tbody></table>`;
+}
+
 function render(){
   const { plan, spec, comparison } = STATE;
   const cur=spec.currency||'USD';
   if(!plan.best){
-    show(`<div class="error">No fully-priceable itinerary found across ${plan.queriesRun} searches. Some legs returned no fare (check codes/dates, or the source lacks data for them).</div>`);
+    const priced=plan.legGrid.filter(l=>l.quote).length, total=plan.legGrid.length;
+    show(`<div class="banner warn">Couldn't price a complete trip from this source — ${priced} of ${total} legs returned a fare. `+
+      `A trip needs every leg priced. Blanks below mean this source has no cached fare for that leg/date — try <b>Amadeus</b>, <b>Demo</b>, or shift the dates.</div>`+
+      `<div class="section-title">What each leg returned</div>${legMatrixHtml(plan,cur)}`);
     return;
   }
   const gk={ cheap:itinKey(plan.best), fast:itinKey(plan.fastest), value:itinKey(plan.bestValue) };
@@ -273,18 +291,7 @@ function render(){
   }
 
   // per-day matrix
-  html+=`<div class="section-title">Per-day prices (cheapest fare &amp; time per date)</div><table><tbody>`;
-  const byRoute={}; for(const l of plan.legGrid){ (byRoute[`${l.origin}→${l.destination}`]||=[]).push(l); }
-  for(const [route,legs] of Object.entries(byRoute)){
-    const priced=legs.filter(l=>l.quote); const minP=priced.length?Math.min(...priced.map(l=>l.quote.price)):null;
-    const cells=legs.slice().sort((a,b)=>a.date.localeCompare(b.date)).map(l=>{
-      if(!l.quote) return `<span class="meta">${l.date}: —</span>`;
-      const cheap=l.quote.price===minP?'cheapday':'';
-      return `<span class="${cheap}">${l.date}: ${money(l.quote.price,cur)}</span> <span class="meta">(${fmtMins(l.quote.durationMinutes)})</span>`;
-    }).join(' &nbsp; ');
-    html+=`<tr><td><b>${route}</b></td><td>${cells}</td></tr>`;
-  }
-  html+=`</tbody></table>`;
+  html+=`<div class="section-title">Per-day prices (cheapest fare &amp; time per date)</div>${legMatrixHtml(plan,cur)}`;
 
   // all options
   html+=`<details><summary>All ${plan.allItineraries.length} options</summary><table><thead><tr><th>#</th><th class="num">Total</th><th class="num">Time</th><th>From</th><th>Start</th><th>Nights</th></tr></thead><tbody>`+

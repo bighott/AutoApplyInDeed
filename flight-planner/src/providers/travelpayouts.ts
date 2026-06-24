@@ -33,21 +33,19 @@ export class TravelpayoutsProvider implements FlightProvider {
     opts: { adults: number; cabin: string; currency?: string },
   ): Promise<FlightQuote | null> {
     const currency = (opts.currency ?? 'USD').toUpperCase();
-    const url = new URL(this.endpoint);
-    url.searchParams.set('origin', q.origin);
-    url.searchParams.set('destination', q.destination);
-    url.searchParams.set('departure_at', q.date);
-    url.searchParams.set('one_way', 'true');
-    url.searchParams.set('currency', currency.toLowerCase());
-    url.searchParams.set('sorting', 'price');
-    url.searchParams.set('limit', '1');
-    url.searchParams.set('token', this.token);
-
-    const res = await this.fetchImpl(url, { headers: { 'x-access-token': this.token } });
-    if (!res.ok) return null;
-    const data = (await res.json()) as any;
-    const f = data?.data?.[0];
-    if (!f || typeof f.price !== 'number') return null;
+    // Exact-date first; if the cache has nothing, retry at month level and keep
+    // only entries that actually depart on the requested date.
+    let items = await this.query(q.origin, q.destination, q.date, currency);
+    if (!items.length) {
+      const month = await this.query(q.origin, q.destination, q.date.slice(0, 7), currency);
+      items = month.filter(
+        (f) => typeof f.departure_at === 'string' && f.departure_at.slice(0, 10) === q.date,
+      );
+    }
+    if (!items.length) return null;
+    items.sort((a, b) => (Number(a.price) || 1e9) - (Number(b.price) || 1e9));
+    const f = items[0];
+    if (typeof f.price !== 'number') return null;
 
     const code = typeof f.airline === 'string' ? f.airline.toUpperCase() : undefined;
     const dur = typeof f.duration === 'number' && f.duration > 0 ? f.duration : undefined;
@@ -65,5 +63,27 @@ export class TravelpayoutsProvider implements FlightProvider {
         ? `https://www.aviasales.com${f.link}`
         : googleFlightsUrl(q.origin, q.destination, q.date),
     };
+  }
+
+  /** Raw prices_for_dates query for a date (YYYY-MM-DD) or month (YYYY-MM). */
+  private async query(
+    origin: string,
+    destination: string,
+    departureAt: string,
+    currency: string,
+  ): Promise<any[]> {
+    const url = new URL(this.endpoint);
+    url.searchParams.set('origin', origin);
+    url.searchParams.set('destination', destination);
+    url.searchParams.set('departure_at', departureAt);
+    url.searchParams.set('one_way', 'true');
+    url.searchParams.set('currency', currency.toLowerCase());
+    url.searchParams.set('sorting', 'price');
+    url.searchParams.set('limit', departureAt.length > 7 ? '1' : '30');
+    url.searchParams.set('token', this.token);
+    const res = await this.fetchImpl(url, { headers: { 'x-access-token': this.token } });
+    if (!res.ok) return [];
+    const data = (await res.json()) as any;
+    return Array.isArray(data?.data) ? data.data : [];
   }
 }
