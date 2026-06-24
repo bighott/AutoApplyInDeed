@@ -33,7 +33,15 @@ import type { FlightQuote, TripSpec } from './types';
 loadEnv();
 
 const PORT = Number(process.env.PORT) || 8787;
-const INDEX = resolve(process.cwd(), 'public', 'index.html');
+const PUBLIC = resolve(process.cwd(), 'public');
+const INDEX = resolve(PUBLIC, 'index.html');
+
+// Strict policy: same-origin scripts only, NO eval / inline script. Inline
+// styles are allowed ('unsafe-inline' in style-src) — that's a style concern,
+// not a script-injection vector.
+const CSP =
+  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+  "img-src 'self' data:; connect-src 'self'; base-uri 'self'; frame-ancestors 'none'";
 
 function readBody(req: import('node:http').IncomingMessage): Promise<string> {
   return new Promise((res, rej) => {
@@ -144,10 +152,22 @@ const server = createServer(async (req, res) => {
       const html = await readFile(INDEX);
       res.writeHead(200, {
         'content-type': 'text/html; charset=utf-8',
+        'content-security-policy': CSP,
         // Never cache the UI shell — avoids stale JS after an update.
         'cache-control': 'no-store, must-revalidate',
       });
       res.end(html);
+      return;
+    }
+
+    if (req.method === 'GET' && req.url === '/app.js') {
+      const js = await readFile(resolve(PUBLIC, 'app.js'));
+      res.writeHead(200, {
+        'content-type': 'text/javascript; charset=utf-8',
+        'content-security-policy': CSP,
+        'cache-control': 'no-store, must-revalidate',
+      });
+      res.end(js);
       return;
     }
 
