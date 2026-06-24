@@ -32,7 +32,7 @@ function addOrigin(code=''){
   const el=document.createElement('div'); el.className='origin-row';
   el.innerHTML=`<div class="combo"><input class="o-code" aria-label="Origin airport code" value="${code}" placeholder="Type a city or airport code…" autocomplete="off" /><div class="ac-menu"></div></div>
     <button type="button" class="xbtn" title="Remove origin" aria-label="Remove origin">✕</button>`;
-  el.querySelector('.xbtn').onclick=()=>{ if(document.querySelectorAll('.origin-row').length>1) el.remove(); };
+  el.querySelector('.xbtn').onclick=()=>{ if(document.querySelectorAll('#origins .origin-row').length>1) el.remove(); };
   $('origins').appendChild(el); attachAutocomplete(el.querySelector('.o-code'));
 }
 $('addOrigin').onclick=()=>addOrigin();
@@ -49,7 +49,7 @@ function addStop(code='',label='',min=2,max=3){
       <div class="field" style="margin-bottom:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
         <div><label>Min nights</label><input class="s-min" aria-label="Minimum nights" type="number" min="0" value="${min}" /></div>
         <div><label>Max nights</label><input class="s-max" aria-label="Maximum nights" type="number" min="0" value="${max}" /></div></div></div>`;
-  el.querySelector('.xbtn').onclick=()=>{ if(document.querySelectorAll('.stop').length>1) el.remove(); };
+  el.querySelector('.xbtn').onclick=()=>{ if(document.querySelectorAll('#stops .stop').length>1) el.remove(); };
   $('stops').appendChild(el);
   const lab=el.querySelector('.s-label');
   // Always set the label to the selected airport's city, overwriting whatever
@@ -75,7 +75,7 @@ function updateHint(){
     ? `<div class="banner warn">No <b>SERPAPI_KEY</b> detected. Create <code>flight-planner/.env</code> with your key, or use <b>Mock</b> to test now.</div>` : '';
 }
 $('provider').onchange=updateHint;
-fetch('/api/config').then(r=>r.json()).then(c=>{ HAS_KEY=!!c.hasSerpApiKey; updateHint(); }).catch(()=>{});
+fetch('/api/config').then(r=>r.json()).then(c=>{ HAS_KEY=!!c.hasSerpApiKey; updateHint(); aUpdateHint(); }).catch(()=>{});
 updateHint();
 
 // ---- submit -----------------------------------------------------------------
@@ -84,7 +84,7 @@ function qsv(el,sel){ const n=el.querySelector(sel); return n?n.value:''; }
 function readSpec(){
   const origins=[...document.querySelectorAll('.o-code')].map(i=>i.value.trim().toUpperCase()).filter(Boolean);
   if(!origins.length) throw new Error('Add at least one origin airport.');
-  const stops=[...document.querySelectorAll('.stop')].map(el=>({
+  const stops=[...document.querySelectorAll('#stops .stop')].map(el=>({
     code: qsv(el,'.s-code').trim().toUpperCase(),
     label: qsv(el,'.s-label').trim()||undefined,
     minNights:Number(qsv(el,'.s-min')), maxNights:Number(qsv(el,'.s-max')),
@@ -222,5 +222,143 @@ function render(){
   html+=`<details><summary>Raw text plan</summary><pre>${escapeHtml(STATE.textPlan)}</pre></details>`;
 
   show(html);
-  document.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>{ STATE.sort=b.dataset.sort; render(); });
+  document.querySelectorAll('#results .seg button').forEach(b=>b.onclick=()=>{ STATE.sort=b.dataset.sort; render(); });
+}
+
+// ============================================================================
+// "Plan my trip" advisor tab
+// ============================================================================
+
+// tab switching
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('act',x===t));
+  const p=t.dataset.pane;
+  $('pane-planner').classList.toggle('act',p==='planner');
+  $('pane-advisor').classList.toggle('act',p==='advisor');
+});
+
+// advisor origins
+function addAOrigin(code=''){
+  const el=document.createElement('div'); el.className='origin-row';
+  el.innerHTML=`<div class="combo"><input class="ao-code" aria-label="Origin airport code" value="${code}" placeholder="City or airport code…" autocomplete="off" /><div class="ac-menu"></div></div>
+    <button type="button" class="xbtn" title="Remove origin" aria-label="Remove origin">✕</button>`;
+  el.querySelector('.xbtn').onclick=()=>{ if(document.querySelectorAll('#a-origins .origin-row').length>1) el.remove(); };
+  $('a-origins').appendChild(el); attachAutocomplete(el.querySelector('.ao-code'));
+}
+$('a-addOrigin').onclick=()=>addAOrigin();
+
+// advisor destinations (label auto-fills with city)
+function addADest(code='',label='',min='',max=''){
+  const el=document.createElement('div'); el.className='stop';
+  el.innerHTML=`
+    <button type="button" class="xbtn" title="Remove place" aria-label="Remove place">✕</button>
+    <div class="field" style="margin-bottom:8px"><label>Place</label>
+      <div class="combo"><input class="ad-code" aria-label="Destination airport" value="${code}" placeholder="City or code…" autocomplete="off" /><div class="ac-menu"></div></div></div>
+    <div class="row">
+      <div class="field" style="margin-bottom:8px"><label>Label (auto-fills)</label><input class="ad-label" aria-label="Destination label" value="${label}" /></div>
+      <div class="field" style="margin-bottom:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div><label>Min nights</label><input class="ad-min" aria-label="Min nights" type="number" min="1" placeholder="any" value="${min}" /></div>
+        <div><label>Max nights</label><input class="ad-max" aria-label="Max nights" type="number" min="1" placeholder="any" value="${max}" /></div></div></div>`;
+  el.querySelector('.xbtn').onclick=()=>{ if(document.querySelectorAll('#a-dests .stop').length>1) el.remove(); };
+  $('a-dests').appendChild(el);
+  const lab=el.querySelector('.ad-label');
+  attachAutocomplete(el.querySelector('.ad-code'),(a)=>{ lab.value=a.city; });
+}
+$('a-addDest').onclick=()=>addADest();
+
+// advisor provider hint
+function aUpdateHint(){
+  $('a-providerHint').textContent=HINTS[$('a-provider').value];
+  const needsKey=$('a-provider').value!=='mock';
+  $('a-keyWarn').innerHTML=(needsKey&&!HAS_KEY)
+    ? `<div class="banner warn">No <b>SERPAPI_KEY</b> detected. Use <b>Mock</b>, or add your key to <code>flight-planner/.env</code>. Note: live route search makes many requests.</div>` : '';
+}
+$('a-provider').onchange=aUpdateHint;
+
+// seed an editable example (user can change to anywhere)
+addAOrigin('PIT'); addAOrigin('CLE');
+addADest('CDG','Paris'); addADest('FCO','Rome'); addADest('BER','Berlin');
+aUpdateHint();
+
+function readAdvisorSpec(){
+  const origins=[...document.querySelectorAll('.ao-code')].map(i=>i.value.trim().toUpperCase()).filter(Boolean);
+  if(!origins.length) throw new Error('Add at least one origin airport.');
+  const destinations=[...document.querySelectorAll('#a-dests .stop')].map(el=>{
+    const min=qsv(el,'.ad-min'), max=qsv(el,'.ad-max');
+    return { code:qsv(el,'.ad-code').trim().toUpperCase(), label:qsv(el,'.ad-label').trim()||undefined,
+      minNights:min?Number(min):undefined, maxNights:max?Number(max):undefined };
+  }).filter(d=>d.code);
+  if(!destinations.length) throw new Error('Add at least one place to visit.');
+  return { origins, destinations, startDate:val('a-startDate'), latestReturn:val('a-latestReturn')||undefined,
+    totalNights:Number(val('a-totalNights')), returnToOrigin:$('a-returnToOrigin').checked,
+    adults:Number(val('a-adults')), cabin:val('a-cabin'), currency:val('a-currency').trim().toUpperCase()||'USD' };
+}
+
+let ASTATE=null;
+function ashow(html){ $('a-results').innerHTML=`<h2>Best routes</h2>${html}`; }
+const acityOf=(c)=>(ASTATE.cityByCode&&ASTATE.cityByCode[c])||c;
+const aKey=(it)=>it?`${it.origin}>${it.returnOrigin||''}|${it.order.join('-')}|${it.startDate}|${it.nightsPerStop.join(',')}`:'';
+const aRoute=(it)=>`${acityOf(it.origin)} → ${it.order.map(acityOf).join(' → ')} → ${acityOf(it.returnOrigin||it.origin)}`;
+
+function aexplain(it){
+  const segs=it.order.map((code,i)=>{ const n=it.nightsPerStop[i]; return `${acityOf(code)} (${n} night${n===1?'':'s'})`; });
+  let s=`Depart ${acityOf(it.origin)} on ${it.startDate}. Visit ${joinSeq(segs)}.`;
+  if(it.returnOrigin){ s+= it.returnOrigin===it.origin
+      ? ` Then fly home to ${acityOf(it.returnOrigin)}.`
+      : ` Then fly home into ${acityOf(it.returnOrigin)} — cheaper than returning to ${acityOf(it.origin)}.`; }
+  const total=it.nightsPerStop.reduce((a,b)=>a+b,0);
+  s+=` ${total} nights total · ${fmtMins(it.totalDurationMinutes)} in the air.`;
+  return s;
+}
+
+function aTripCard(it,rank,badges){
+  const cur=ASTATE.spec.currency||'USD';
+  const badgeHtml=badges.map(b=>`<span class="badge ${b.cls}">${b.lab}</span>`).join('');
+  return `<div class="trip${rank===1?' top':''}">
+    <div class="trip-head">
+      <div class="trip-rank">#${rank}</div>
+      <div class="trip-badges">${badgeHtml}</div>
+      <div class="trip-cost"><div class="trip-price">${money(it.total,cur)}</div><div class="trip-time">${fmtMins(it.totalDurationMinutes)}</div></div>
+    </div>
+    <div class="trip-route">${escapeHtml(aRoute(it))}</div>
+    <div class="trip-explain">${escapeHtml(aexplain(it))}</div>
+    <div class="trip-legs">${it.legs.map(legRow).join('')}</div>
+  </div>`;
+}
+
+$('aform').onsubmit=async(e)=>{
+  e.preventDefault(); const btn=$('a-run'); btn.disabled=true; btn.textContent='Planning…';
+  ashow(`<div class="empty"><span class="spinner"></span> Searching every route…</div>`);
+  try {
+    const res=await fetch('/api/plan-trip',{ method:'POST', headers:{'content-type':'application/json'},
+      body:JSON.stringify({ spec:readAdvisorSpec(), provider:$('a-provider').value }) });
+    const data=await res.json();
+    if(!data.ok) throw new Error(data.error||'Request failed');
+    ASTATE={ result:data.result, spec:data.spec, cityByCode:data.cityByCode, sort:'price' };
+    renderAdvisor();
+  } catch(err){ ashow(`<div class="error"><b>Error:</b> ${escapeHtml(err.message)}</div>`); }
+  finally { btn.disabled=false; btn.textContent='✦ Plan my trip'; }
+};
+
+function renderAdvisor(){
+  const r=ASTATE.result, cur=ASTATE.spec.currency||'USD';
+  if(!r.best){ ashow(`<div class="error">No complete route could be priced across ${r.queriesRun} searches. Try a wider date window or different airports.</div>`); return; }
+  const gk={ cheap:aKey(r.best), fast:aKey(r.fastest), value:aKey(r.bestValue) };
+  const sorted=sortRows(r.allItineraries, ASTATE.sort);
+  const top=sorted.slice(0,5);
+  const cards=top.map((it,i)=>{ const k=aKey(it); const badges=[];
+    if(k===gk.cheap) badges.push({cls:'cheap',lab:'Cheapest'});
+    if(k===gk.fast) badges.push({cls:'fast',lab:'Fastest'});
+    if(k===gk.value) badges.push({cls:'value',lab:'Best value'});
+    return aTripCard(it,i+1,badges);
+  }).join('');
+  const seg=(k,lab)=>`<button class="${ASTATE.sort===k?'act':''}" data-asort="${k}">${lab}</button>`;
+  let html=`<div class="toolbar"><span class="lbl">Top 5 by</span><div class="seg">${seg('price','Cheapest')}${seg('time','Fastest')}${seg('value','Best value')}</div>`+
+    `<span class="lbl" style="margin-left:auto">tried ${r.permutationsTried} orders · ${r.routesConsidered.toLocaleString()} routes · ${r.queriesRun} searches</span></div>`;
+  html+=cards;
+  html+=`<details><summary>More routes (${r.allItineraries.length})</summary><table><thead><tr><th>#</th><th class="num">Total</th><th class="num">Time</th><th>Route</th><th>Nights</th><th>Start</th></tr></thead><tbody>`+
+    sorted.map((it,i)=>`<tr><td>${i+1}</td><td class="num">${money(it.total,cur)}</td><td class="num">${fmtMins(it.totalDurationMinutes)}</td><td>${escapeHtml(aRoute(it))}</td><td>[${it.nightsPerStop.join(', ')}]</td><td>${it.startDate}</td></tr>`).join('')+
+    `</tbody></table></details>`;
+  ashow(html);
+  document.querySelectorAll('#a-results .seg button').forEach(b=>b.onclick=()=>{ ASTATE.sort=b.dataset.asort; renderAdvisor(); });
 }

@@ -16,6 +16,18 @@ best total price.
 
 ## Web UI
 
+Two tabs:
+
+- **Multi-city Planner** — you give the stops *in order*; it optimizes dates.
+- **✦ Plan my trip** — you give an *unordered* set of places, a date window, and a
+  total number of nights. The advisor acts as a travel agent: it tries every
+  visit **order**, every way to split the nights, every start date in the window,
+  and every depart/return origin pairing, then returns the cheapest / fastest /
+  best-value **routes** (e.g. "leave Pittsburgh, Paris → Rome → Berlin, fly home
+  into Cleveland"). Enter any origins and any places — the pre-filled values are
+  just an editable example.
+
+
 ```
 npm run ui        # then open http://localhost:8787
 ```

@@ -18,7 +18,8 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import { cityOf, searchAirports } from './airports';
-import { compareLegPrices, type NamedProvider } from './crosscheck';
+import { planAdvisor, type AdvisorSpec } from './advisor';
+import { CheapestOfProvider, compareLegPrices, type NamedProvider } from './crosscheck';
 import { loadEnv, requireEnv } from './env';
 import { formatPlan } from './format';
 import { expediaStaticProvider } from './expedia-fares';
@@ -146,6 +147,66 @@ async function runPlan(spec: TripSpec, providerKind: string) {
   throw new Error(`Unknown provider "${providerKind}"`);
 }
 
+/** A single FlightProvider for the advisor (cheapest-of for cross-check). */
+function makeProvider(kind: string): FlightProvider {
+  if (kind === 'mock') return new MockFlightProvider();
+  if (kind === 'serpapi') return new SerpApiGoogleFlightsProvider(requireEnv('SERPAPI_KEY'));
+  if (kind === 'crosscheck') {
+    const key = requireEnv('SERPAPI_KEY');
+    return new CheapestOfProvider([
+      { name: 'SerpApi', provider: new SerpApiGoogleFlightsProvider(key) },
+      { name: 'Expedia', provider: expediaStaticProvider },
+    ]);
+  }
+  throw new Error(`Unknown provider "${kind}"`);
+}
+
+/** Validate + coerce the posted advisor request into an AdvisorSpec. */
+function toAdvisorSpec(raw: any): AdvisorSpec {
+  if (!raw || typeof raw !== 'object') throw new Error('Missing trip request');
+  const rawOrigins: any[] = Array.isArray(raw.origins) ? raw.origins : [];
+  const origins = [
+    ...new Set(rawOrigins.map((o) => String(o).trim().toUpperCase()).filter(Boolean)),
+  ];
+  if (origins.length === 0) throw new Error('Add at least one origin airport.');
+  if (!Array.isArray(raw.destinations) || raw.destinations.length === 0) {
+    throw new Error('Add at least one place to visit.');
+  }
+  const totalNights = Number(raw.totalNights);
+  if (!Number.isFinite(totalNights) || totalNights < 1) {
+    throw new Error('Total nights must be a positive number.');
+  }
+  const destinations = raw.destinations.map((d: any, i: number) => {
+    const code = String(d.code || '').trim().toUpperCase();
+    if (!code) throw new Error(`Destination ${i + 1}: code is required.`);
+    const minNights = d.minNights != null ? Number(d.minNights) : undefined;
+    const maxNights = d.maxNights != null ? Number(d.maxNights) : undefined;
+    if (minNights != null && maxNights != null && maxNights < minNights) {
+      throw new Error(`Destination ${code}: max nights < min nights.`);
+    }
+    return { code, label: d.label ? String(d.label) : undefined, minNights, maxNights };
+  });
+  const startDate = String(raw.startDate || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) throw new Error('Earliest departure must be yyyy-mm-dd.');
+  const latestReturn = raw.latestReturn ? String(raw.latestReturn).trim() : undefined;
+  if (latestReturn && !/^\d{4}-\d{2}-\d{2}$/.test(latestReturn)) {
+    throw new Error('Latest return must be yyyy-mm-dd.');
+  }
+  const cabin = String(raw.cabin || 'ECONOMY').toUpperCase();
+
+  return {
+    origins,
+    destinations,
+    startDate,
+    latestReturn,
+    totalNights,
+    returnToOrigin: raw.returnToOrigin !== false,
+    adults: Math.max(1, Number(raw.adults) || 1),
+    cabin,
+    currency: raw.currency ? String(raw.currency).toUpperCase() : 'USD',
+  };
+}
+
 const server = createServer(async (req, res) => {
   try {
     // Route by pathname so query strings (e.g. cache-busting /?v=2) still match.
@@ -222,6 +283,22 @@ const server = createServer(async (req, res) => {
           textPlan: formatPlan(spec, plan),
         }),
       );
+      return;
+    }
+
+    // "Plan my trip" — route-optimizing advisor.
+    if (req.method === 'POST' && path === '/api/plan-trip') {
+      const body = JSON.parse((await readBody(req)) || '{}');
+      const spec = toAdvisorSpec(body.spec);
+      const provider = String(body.provider || 'mock');
+      const result = await planAdvisor(makeProvider(provider), spec);
+      const cityByCode: Record<string, string> = {};
+      for (const code of [...spec.origins, ...spec.destinations.map((d) => d.code)]) {
+        const city = cityOf(code);
+        if (city) cityByCode[code] = city;
+      }
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, provider, spec, result, cityByCode }));
       return;
     }
 

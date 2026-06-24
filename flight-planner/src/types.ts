@@ -88,6 +88,8 @@ export interface ItineraryResult {
   currency: string;
   /** Sum of leg flight times in minutes; null if any leg's duration is unknown. */
   totalDurationMinutes: number | null;
+  /** Visit order (destination codes) — set by the route-optimizing "Plan my trip" advisor. */
+  order?: string[];
 }
 
 export interface PlanResult {

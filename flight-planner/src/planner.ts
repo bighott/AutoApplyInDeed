@@ -109,8 +109,8 @@ export function enumerateItineraries(spec: TripSpec): ItinerarySkeleton[] {
   return out;
 }
 
-/** The unique set of leg/date searches needed to price all itineraries. */
-export function uniqueLegQueries(itineraries: ItinerarySkeleton[]): LegQuery[] {
+/** Unique leg/date searches needed to price a set of leg-bearing itineraries. */
+export function uniqueLegQueries(itineraries: Array<{ legs: LegQuery[] }>): LegQuery[] {
   const map = new Map<string, LegQuery>();
   for (const it of itineraries) {
     for (const leg of it.legs) {
@@ -121,7 +121,7 @@ export function uniqueLegQueries(itineraries: ItinerarySkeleton[]): LegQuery[] {
   return [...map.values()];
 }
 
-async function priceWithLimit(
+export async function priceWithLimit(
   provider: FlightProvider,
   queries: LegQuery[],
   opts: { adults: number; cabin: string; currency?: string },

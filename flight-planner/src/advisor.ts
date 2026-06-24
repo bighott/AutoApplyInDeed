@@ -1,0 +1,247 @@
+/**
+ * "Plan my trip" advisor: route optimization.
+ *
+ * Unlike the fixed-order planner, here the user gives an *unordered* set of
+ * places plus a total trip length and a date window, and the advisor discovers
+ * the best route: it tries every visit ORDER (permutation), every way to split
+ * the total nights across the cities (respecting per-city min/max), every start
+ * date that fits the window, and every depart/return origin pairing — then
+ * prices the unique legs once and returns the cheapest / fastest / best-value
+ * routes.
+ */
+
+import {
+  addDays,
+  pickBestValue,
+  pickFastest,
+  priceWithLimit,
+  uniqueLegQueries,
+  legKey,
+  type FlightProvider,
+} from './planner';
+import type { FlightQuote, ItineraryResult, LegQuery, PricedLeg } from './types';
+
+export interface AdvisorDestination {
+  code: string;
+  label?: string;
+  /** Per-city night bounds; default min 1, max = totalNights. */
+  minNights?: number;
+  maxNights?: number;
+}
+
+export interface AdvisorSpec {
+  /** Candidate depart/return airports. */
+  origins: string[];
+  /** Unordered places to visit. */
+  destinations: AdvisorDestination[];
+  /** Earliest possible departure (ISO yyyy-mm-dd). */
+  startDate: string;
+  /** Latest possible return (ISO). If set and later than startDate+totalNights, the trip slides within the window. */
+  latestReturn?: string;
+  /** Total nights for the whole trip. */
+  totalNights: number;
+  returnToOrigin: boolean;
+  adults: number;
+  cabin: string;
+  currency?: string;
+}
+
+export interface AdvisorResult {
+  best: ItineraryResult | null;
+  fastest: ItineraryResult | null;
+  bestValue: ItineraryResult | null;
+  allItineraries: ItineraryResult[];
+  queriesRun: number;
+  permutationsTried: number;
+  /** Total candidate routes enumerated before pricing. */
+  routesConsidered: number;
+}
+
+export interface AdvisorOptions {
+  concurrency?: number;
+  /**
+   * Guard against combinatorial blow-up in route ENUMERATION (in-memory only;
+   * pricing is deduped to unique legs). Default 80000.
+   */
+  maxRoutes?: number;
+  /** Hard cap on destinations (perms = k!); default 6. */
+  maxDestinations?: number;
+  /** How many ranked itineraries to return (keeps the payload small). Default 50. */
+  maxResults?: number;
+}
+
+interface AdvisorSkeleton {
+  origin: string;
+  returnOrigin: string | null;
+  startDate: string;
+  nightsPerStop: number[];
+  order: string[];
+  legs: LegQuery[];
+}
+
+function factorial(n: number): number {
+  let f = 1;
+  for (let i = 2; i <= n; i++) f *= i;
+  return f;
+}
+
+function permute<T>(arr: T[]): T[][] {
+  if (arr.length <= 1) return [arr.slice()];
+  const out: T[][] = [];
+  arr.forEach((v, i) => {
+    const rest = [...arr.slice(0, i), ...arr.slice(i + 1)];
+    for (const p of permute(rest)) out.push([v, ...p]);
+  });
+  return out;
+}
+
+/** All ways to split `total` nights into per-position counts within [mins[i], maxs[i]]. */
+function nightSplits(mins: number[], maxs: number[], total: number): number[][] {
+  const k = mins.length;
+  const minSuffix = new Array(k + 1).fill(0);
+  const maxSuffix = new Array(k + 1).fill(0);
+  for (let i = k - 1; i >= 0; i--) {
+    minSuffix[i] = minSuffix[i + 1] + mins[i];
+    maxSuffix[i] = maxSuffix[i + 1] + maxs[i];
+  }
+  const out: number[][] = [];
+  const acc: number[] = [];
+  const rec = (i: number, remaining: number): void => {
+    if (i === k) {
+      if (remaining === 0) out.push(acc.slice());
+      return;
+    }
+    const lo = Math.max(mins[i], remaining - maxSuffix[i + 1]);
+    const hi = Math.min(maxs[i], remaining - minSuffix[i + 1]);
+    for (let n = lo; n <= hi; n++) {
+      acc.push(n);
+      rec(i + 1, remaining - n);
+      acc.pop();
+    }
+  };
+  rec(0, total);
+  return out;
+}
+
+function daysBetween(a: string, b: string): number {
+  return Math.round(
+    (Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000,
+  );
+}
+
+/** Enumerate every candidate route (order × split × start offset × origin pair). */
+export function enumerateAdvisor(spec: AdvisorSpec, maxRoutes: number): AdvisorSkeleton[] {
+  const origins = [...new Set(spec.origins.filter(Boolean))];
+  const dests = spec.destinations;
+
+  let slack = 0;
+  if (spec.latestReturn) {
+    slack = Math.max(0, daysBetween(spec.startDate, spec.latestReturn) - spec.totalNights);
+  }
+
+  const out: AdvisorSkeleton[] = [];
+  for (const perm of permute(dests)) {
+    const mins = perm.map((d) => Math.max(1, d.minNights ?? 1));
+    const maxs = perm.map((d) => Math.min(d.maxNights ?? spec.totalNights, spec.totalNights));
+    for (const split of nightSplits(mins, maxs, spec.totalNights)) {
+      for (let off = 0; off <= slack; off++) {
+        const startDate = addDays(spec.startDate, off);
+        for (const depart of origins) {
+          const returns = spec.returnToOrigin ? origins : [null];
+          for (const ret of returns) {
+            const legs: LegQuery[] = [];
+            let cursor = startDate;
+            let from = depart;
+            perm.forEach((d, i) => {
+              legs.push({ origin: from, destination: d.code, date: cursor });
+              cursor = addDays(cursor, split[i]);
+              from = d.code;
+            });
+            if (ret) legs.push({ origin: from, destination: ret, date: cursor });
+            out.push({
+              origin: depart,
+              returnOrigin: ret,
+              startDate,
+              nightsPerStop: split,
+              order: perm.map((d) => d.code),
+              legs,
+            });
+            if (out.length > maxRoutes) {
+              throw new Error(
+                `Too many candidate routes (>${maxRoutes}). Narrow the date window, ` +
+                  'reduce destinations, or tighten per-city night ranges.',
+              );
+            }
+          }
+        }
+      }
+    }
+  }
+  return out;
+}
+
+export async function planAdvisor(
+  provider: FlightProvider,
+  spec: AdvisorSpec,
+  options: AdvisorOptions = {},
+): Promise<AdvisorResult> {
+  const currency = spec.currency || 'USD';
+  const maxDest = options.maxDestinations ?? 6;
+  if (spec.destinations.length < 1) throw new Error('Add at least one place to visit.');
+  if (spec.destinations.length > maxDest) {
+    throw new Error(`Too many destinations (${spec.destinations.length} > ${maxDest}).`);
+  }
+  if (spec.totalNights < spec.destinations.length) {
+    throw new Error(
+      `Total nights (${spec.totalNights}) must be at least the number of places ` +
+        `(${spec.destinations.length}) so each gets at least one night.`,
+    );
+  }
+
+  const skeletons = enumerateAdvisor(spec, options.maxRoutes ?? 80000);
+  const queries = uniqueLegQueries(skeletons);
+  const priced = await priceWithLimit(
+    provider,
+    queries,
+    { adults: spec.adults, cabin: spec.cabin, currency },
+    options.concurrency ?? 6,
+  );
+
+  const results: ItineraryResult[] = [];
+  for (const sk of skeletons) {
+    const legs: PricedLeg[] = sk.legs.map((q) => ({ ...q, quote: priced.get(legKey(q)) ?? null }));
+    if (legs.some((l) => !l.quote)) continue;
+    const total = legs.reduce((s, l) => s + (l.quote as FlightQuote).price, 0);
+    const durations = legs.map((l) => (l.quote as FlightQuote).durationMinutes);
+    const totalDurationMinutes = durations.every((d) => typeof d === 'number')
+      ? (durations as number[]).reduce((a, b) => a + b, 0)
+      : null;
+    results.push({
+      origin: sk.origin,
+      returnOrigin: sk.returnOrigin,
+      startDate: sk.startDate,
+      nightsPerStop: sk.nightsPerStop,
+      order: sk.order,
+      legs,
+      total,
+      currency,
+      totalDurationMinutes,
+    });
+  }
+  results.sort((a, b) => a.total - b.total);
+
+  // Compute picks over ALL feasible routes, but only return the top N so the
+  // JSON payload stays small (mock can make tens of thousands feasible).
+  const best = results[0] ?? null;
+  const fastest = pickFastest(results);
+  const bestValue = pickBestValue(results);
+  return {
+    best,
+    fastest,
+    bestValue,
+    allItineraries: results.slice(0, options.maxResults ?? 50),
+    queriesRun: queries.length,
+    permutationsTried: factorial(spec.destinations.length),
+    routesConsidered: skeletons.length,
+  };
+}
