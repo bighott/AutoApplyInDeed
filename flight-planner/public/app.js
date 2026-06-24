@@ -355,6 +355,7 @@ function renderAdvisor(){
   const seg=(k,lab)=>`<button class="${ASTATE.sort===k?'act':''}" data-asort="${k}">${lab}</button>`;
   let html=`<div class="toolbar"><span class="lbl">Top 5 by</span><div class="seg">${seg('price','Cheapest')}${seg('time','Fastest')}${seg('value','Best value')}</div>`+
     `<span class="lbl" style="margin-left:auto">tried ${r.permutationsTried} orders · ${r.routesConsidered.toLocaleString()} routes · ${r.queriesRun} searches</span></div>`;
+  if(r.sampled) html+=`<div class="banner warn">Wide search: I sampled start dates (every ${r.dateStepDays} day${r.dateStepDays===1?'':'s'}) and some trip-length splits to stay fast. Narrow the date window or set per-place night ranges for finer results.</div>`;
   html+=cards;
   html+=`<details><summary>More routes (${r.allItineraries.length})</summary><table><thead><tr><th>#</th><th class="num">Total</th><th class="num">Time</th><th>Route</th><th>Nights</th><th>Start</th></tr></thead><tbody>`+
     sorted.map((it,i)=>`<tr><td>${i+1}</td><td class="num">${money(it.total,cur)}</td><td class="num">${fmtMins(it.totalDurationMinutes)}</td><td>${escapeHtml(aRoute(it))}</td><td>[${it.nightsPerStop.join(', ')}]</td><td>${it.startDate}</td></tr>`).join('')+

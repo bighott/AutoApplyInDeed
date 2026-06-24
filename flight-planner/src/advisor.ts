@@ -56,6 +56,10 @@ export interface AdvisorResult {
   permutationsTried: number;
   /** Total candidate routes enumerated before pricing. */
   routesConsidered: number;
+  /** True if the date/length grid was sampled to stay efficient. */
+  sampled: boolean;
+  /** Days between sampled start dates (1 = every day). */
+  dateStepDays: number;
 }
 
 export interface AdvisorOptions {
@@ -98,8 +102,36 @@ function permute<T>(arr: T[]): T[][] {
   return out;
 }
 
-/** All ways to split `total` nights into per-position counts within [mins[i], maxs[i]]. */
-function nightSplits(mins: number[], maxs: number[], total: number): number[][] {
+/** Count valid night-splits (permutation-invariant) via DP, without listing them. */
+function countSplits(mins: number[], maxs: number[], total: number): number {
+  const k = mins.length;
+  const memo = new Map<number, number>();
+  const rec = (i: number, rem: number): number => {
+    if (i === k) return rem === 0 ? 1 : 0;
+    if (rem < 0) return 0;
+    const key = i * 1_000_003 + rem;
+    const cached = memo.get(key);
+    if (cached !== undefined) return cached;
+    let c = 0;
+    for (let n = mins[i]; n <= maxs[i] && n <= rem; n++) c += rec(i + 1, rem - n);
+    memo.set(key, c);
+    return c;
+  };
+  return rec(0, total);
+}
+
+/**
+ * Night-splits within [mins[i], maxs[i]] summing to `total`. `stride` keeps only
+ * every Nth split (even sampling) and `cap` stops early — together they bound the
+ * output when the full set would be too large.
+ */
+function nightSplits(
+  mins: number[],
+  maxs: number[],
+  total: number,
+  stride = 1,
+  cap = Infinity,
+): number[][] {
   const k = mins.length;
   const minSuffix = new Array(k + 1).fill(0);
   const maxSuffix = new Array(k + 1).fill(0);
@@ -109,9 +141,14 @@ function nightSplits(mins: number[], maxs: number[], total: number): number[][] 
   }
   const out: number[][] = [];
   const acc: number[] = [];
+  let idx = 0;
   const rec = (i: number, remaining: number): void => {
+    if (out.length >= cap) return;
     if (i === k) {
-      if (remaining === 0) out.push(acc.slice());
+      if (remaining === 0) {
+        if (idx % stride === 0) out.push(acc.slice());
+        idx++;
+      }
       return;
     }
     const lo = Math.max(mins[i], remaining - maxSuffix[i + 1]);
@@ -120,6 +157,7 @@ function nightSplits(mins: number[], maxs: number[], total: number): number[][] 
       acc.push(n);
       rec(i + 1, remaining - n);
       acc.pop();
+      if (out.length >= cap) return;
     }
   };
   rec(0, total);
@@ -132,22 +170,70 @@ function daysBetween(a: string, b: string): number {
   );
 }
 
-/** Enumerate every candidate route (order × split × start offset × origin pair). */
-export function enumerateAdvisor(spec: AdvisorSpec, maxRoutes: number): AdvisorSkeleton[] {
+export interface AdvisorEnumeration {
+  skeletons: AdvisorSkeleton[];
+  /** True if the date/length grid was sampled (coarsened) to stay within budget. */
+  sampled: boolean;
+  /** Days between sampled start dates (1 = every day). */
+  dateStepDays: number;
+}
+
+/**
+ * Enumerate candidate routes (order × split × start offset × origin pair),
+ * auto-coarsening the date/length grid so the count stays under `maxRoutes`.
+ * Every city ORDER and origin pairing is always tried in full; only the date
+ * offsets and (if still needed) the day-splits are sampled.
+ */
+export function enumerateAdvisor(spec: AdvisorSpec, maxRoutes: number): AdvisorEnumeration {
   const origins = [...new Set(spec.origins.filter(Boolean))];
   const dests = spec.destinations;
+  const perms = permute(dests);
+  const total = spec.totalNights;
 
-  let slack = 0;
-  if (spec.latestReturn) {
-    slack = Math.max(0, daysBetween(spec.startDate, spec.latestReturn) - spec.totalNights);
+  const slack = spec.latestReturn
+    ? Math.max(0, daysBetween(spec.startDate, spec.latestReturn) - total)
+    : 0;
+
+  const originPairs = spec.returnToOrigin ? origins.length * origins.length : origins.length;
+  // The irreducible part — every order × origin pairing — can't be sampled away.
+  if (perms.length * originPairs > maxRoutes) {
+    throw new Error(
+      'Too many origin × place-order combinations to search. ' +
+        'Reduce the number of places or origin airports.',
+    );
   }
 
+  // Splits-per-perm count is permutation-invariant; compute once.
+  const mins0 = perms[0].map((d) => Math.max(1, d.minNights ?? 1));
+  const maxs0 = perms[0].map((d) => Math.min(d.maxNights ?? total, total));
+  const splitsCount = countSplits(mins0, maxs0, total);
+
+  // Budget per (perm × origin pair) = how many (offset × split) we can afford.
+  const perBranch = Math.max(1, Math.floor(maxRoutes / (perms.length * originPairs)));
+  let step: number;
+  let splitStride: number;
+  let splitCap: number;
+  if (splitsCount <= perBranch) {
+    splitStride = 1;
+    splitCap = Infinity;
+    const maxOffsets = Math.max(1, Math.floor(perBranch / splitsCount));
+    step = Math.max(1, Math.ceil((slack + 1) / maxOffsets));
+  } else {
+    step = slack + 1; // only the earliest start date
+    splitCap = perBranch;
+    splitStride = Math.max(1, Math.ceil(splitsCount / perBranch));
+  }
+  const offsets: number[] = [];
+  for (let o = 0; o <= slack; o += step) offsets.push(o);
+  const sampled = step > 1 || splitCap < splitsCount;
+
   const out: AdvisorSkeleton[] = [];
-  for (const perm of permute(dests)) {
+  for (const perm of perms) {
     const mins = perm.map((d) => Math.max(1, d.minNights ?? 1));
-    const maxs = perm.map((d) => Math.min(d.maxNights ?? spec.totalNights, spec.totalNights));
-    for (const split of nightSplits(mins, maxs, spec.totalNights)) {
-      for (let off = 0; off <= slack; off++) {
+    const maxs = perm.map((d) => Math.min(d.maxNights ?? total, total));
+    const order = perm.map((d) => d.code);
+    for (const split of nightSplits(mins, maxs, total, splitStride, splitCap)) {
+      for (const off of offsets) {
         const startDate = addDays(spec.startDate, off);
         for (const depart of origins) {
           const returns = spec.returnToOrigin ? origins : [null];
@@ -161,26 +247,13 @@ export function enumerateAdvisor(spec: AdvisorSpec, maxRoutes: number): AdvisorS
               from = d.code;
             });
             if (ret) legs.push({ origin: from, destination: ret, date: cursor });
-            out.push({
-              origin: depart,
-              returnOrigin: ret,
-              startDate,
-              nightsPerStop: split,
-              order: perm.map((d) => d.code),
-              legs,
-            });
-            if (out.length > maxRoutes) {
-              throw new Error(
-                `Too many candidate routes (>${maxRoutes}). Narrow the date window, ` +
-                  'reduce destinations, or tighten per-city night ranges.',
-              );
-            }
+            out.push({ origin: depart, returnOrigin: ret, startDate, nightsPerStop: split, order, legs });
           }
         }
       }
     }
   }
-  return out;
+  return { skeletons: out, sampled, dateStepDays: step };
 }
 
 export async function planAdvisor(
@@ -201,7 +274,7 @@ export async function planAdvisor(
     );
   }
 
-  const skeletons = enumerateAdvisor(spec, options.maxRoutes ?? 80000);
+  const { skeletons, sampled, dateStepDays } = enumerateAdvisor(spec, options.maxRoutes ?? 80000);
   const queries = uniqueLegQueries(skeletons);
   const searchOpts = { adults: spec.adults, cabin: spec.cabin, currency };
   const maxSearches = options.maxSearches ?? Infinity;
@@ -245,5 +318,7 @@ export async function planAdvisor(
     queriesRun: queries.length,
     permutationsTried: factorial(spec.destinations.length),
     routesConsidered: skeletons.length,
+    sampled,
+    dateStepDays,
   };
 }
