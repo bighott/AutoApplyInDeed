@@ -1,12 +1,19 @@
 /**
- * Human-readable rendering of a PlanResult: the recommended itinerary, the
- * per-leg multi-day price matrix, and the cheapest-first itinerary ranking.
+ * Human-readable rendering of a PlanResult: the recommended itineraries
+ * (cheapest / fastest / best value), the per-leg multi-day price matrix, and the
+ * cheapest-first ranking — including total flight time and booking links.
  */
 
-import type { PlanResult, PricedLeg, TripSpec } from './types';
+import { originsOf } from './planner';
+import type { ItineraryResult, PlanResult, PricedLeg, TripSpec } from './types';
+import { minutesToLabel } from './util';
 
 function money(n: number, currency: string): string {
   return `${currency} ${n.toFixed(2)}`;
+}
+
+function dur(mins: number | null): string {
+  return mins == null ? '—' : (minutesToLabel(mins) ?? '—');
 }
 
 function legLine(l: PricedLeg): string {
@@ -18,19 +25,38 @@ function legLine(l: PricedLeg): string {
     q.stops != null ? `${q.stops} stop${q.stops === 1 ? '' : 's'}` : '',
     q.durationLabel ?? '',
     q.seatsLeft === 0 ? '(sold out at this fare)' : '',
+    q.bookingUrl ? `book: ${q.bookingUrl}` : '',
   ].filter(Boolean);
   return `   ${l.origin}→${l.destination} ${l.date}  ${bits.join('  ·  ')}`;
 }
 
+function itineraryBlock(title: string, spec: TripSpec, it: ItineraryResult): string[] {
+  const lines: string[] = [title];
+  lines.push(
+    `   From ${it.origin}, start ${it.startDate}, nights: ${spec.stops
+      .map((s, i) => `${s.label || s.code} ${it.nightsPerStop[i]}`)
+      .join(', ')}`,
+  );
+  for (const l of it.legs) lines.push(legLine(l));
+  lines.push(`   ────────`);
+  lines.push(
+    `   TOTAL: ${money(it.total, it.currency)}  ·  flight time ${dur(it.totalDurationMinutes)}`,
+  );
+  return lines;
+}
+
 export function formatPlan(spec: TripSpec, result: PlanResult): string {
   const lines: string[] = [];
+  const origins = originsOf(spec);
+  const originLabel = origins.length > 1 ? `[${origins.join('/')}]` : origins[0];
   const route = [
-    spec.origin,
+    originLabel,
     ...spec.stops.map((s) => s.label || s.code),
-    ...(spec.returnToOrigin ? [spec.origin] : []),
+    ...(spec.returnToOrigin ? [originLabel] : []),
   ].join(' → ');
 
   lines.push(`Trip: ${route}`);
+  if (origins.length > 1) lines.push(`Origins tried: ${origins.join(', ')}`);
   lines.push(
     `Stops: ${spec.stops
       .map((s) => `${s.label || s.code} ${s.minNights}-${s.maxNights}n`)
@@ -48,20 +74,28 @@ export function formatPlan(spec: TripSpec, result: PlanResult): string {
     return lines.join('\n');
   }
 
-  const b = result.best;
-  lines.push('★ CHEAPEST ITINERARY');
-  lines.push(
-    `   Start ${b.startDate}, nights: ${spec.stops
-      .map((s, i) => `${s.label || s.code} ${b.nightsPerStop[i]}`)
-      .join(', ')}`,
-  );
-  for (const l of b.legs) lines.push(legLine(l));
-  lines.push(`   ────────`);
-  lines.push(`   TOTAL: ${money(b.total, b.currency)}`);
+  lines.push(...itineraryBlock('★ CHEAPEST', spec, result.best));
   lines.push('');
 
-  // Per-leg multi-day matrix: cheapest price seen for each leg/date.
-  lines.push('Per-leg price matrix (the multi-day search):');
+  // Surface fastest and best-value only when they differ from the cheapest.
+  const sameItin = (a: ItineraryResult | null, b: ItineraryResult | null) =>
+    a && b && a.origin === b.origin && a.startDate === b.startDate &&
+    a.nightsPerStop.join() === b.nightsPerStop.join();
+  if (result.fastest && !sameItin(result.fastest, result.best)) {
+    lines.push(...itineraryBlock('⚡ FASTEST', spec, result.fastest));
+    lines.push('');
+  }
+  if (
+    result.bestValue &&
+    !sameItin(result.bestValue, result.best) &&
+    !sameItin(result.bestValue, result.fastest)
+  ) {
+    lines.push(...itineraryBlock('◆ BEST VALUE (price + time)', spec, result.bestValue));
+    lines.push('');
+  }
+
+  // Per-leg multi-day matrix: cheapest price + time for each leg/date.
+  lines.push('Per-leg price matrix (cheapest fare per day):');
   const byRoute = new Map<string, PricedLeg[]>();
   for (const l of result.legGrid) {
     const k = `${l.origin}→${l.destination}`;
@@ -71,7 +105,11 @@ export function formatPlan(spec: TripSpec, result: PlanResult): string {
     const cells = legs
       .slice()
       .sort((a, b2) => a.date.localeCompare(b2.date))
-      .map((l) => `${l.date}: ${l.quote ? money(l.quote.price, l.quote.currency) : '—'}`);
+      .map((l) =>
+        l.quote
+          ? `${l.date}: ${money(l.quote.price, l.quote.currency)} (${dur(l.quote.durationMinutes ?? null)})`
+          : `${l.date}: —`,
+      );
     lines.push(`   ${route2}  ${cells.join('   ')}`);
   }
   lines.push('');
@@ -80,8 +118,8 @@ export function formatPlan(spec: TripSpec, result: PlanResult): string {
   lines.push('Cheapest itineraries (top 5):');
   result.allItineraries.slice(0, 5).forEach((it, i) => {
     lines.push(
-      `   ${i + 1}. ${money(it.total, it.currency)}  start ${it.startDate}  ` +
-        `nights [${it.nightsPerStop.join(',')}]`,
+      `   ${i + 1}. ${money(it.total, it.currency)}  ·  ${dur(it.totalDurationMinutes)}  ·  ` +
+        `from ${it.origin}  start ${it.startDate}  nights [${it.nightsPerStop.join(',')}]`,
     );
   });
 

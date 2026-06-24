@@ -14,6 +14,25 @@ best total price.
 > flight-search via Claude's MCP tool (agent-driven); your own deployed code
 > would plug in a keyed API (Duffel, Amadeus, Kiwi/Tequila, …).
 
+## Web UI
+
+```
+npm run ui        # then open http://localhost:8787
+```
+
+A zero-dependency local web app to build and test trips interactively:
+
+- **Airport autocomplete** on every origin/stop field (type a city, code, or
+  airport name — `lon`, `lhr`, and `heath` all find London Heathrow).
+- **Multiple origins** — add several departure airports; the planner tries a
+  round trip from each and picks the cheapest.
+- **Cheapest / Fastest / Best value** picks side by side (best value balances
+  price 60% and total flight time 40%), plus a sortable list of all options.
+- **Per-day price matrix** with flight times, cheapest day highlighted.
+- **Clickable booking links** per leg.
+- **Price source** selectable: Mock (offline, no key), SerpApi (live), or
+  Cross-check (SerpApi vs Expedia). The UI warns if no `SERPAPI_KEY` is set.
+
 ## How it works
 
 ```

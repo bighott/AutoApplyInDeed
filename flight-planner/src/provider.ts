@@ -16,6 +16,7 @@
 import type { FlightProvider } from './planner';
 import { legKey } from './planner';
 import type { FlightQuote, LegQuery } from './types';
+import { googleFlightsUrl, minutesToLabel } from './util';
 
 // --- deterministic mock (offline) --------------------------------------------
 
@@ -42,16 +43,21 @@ export class MockFlightProvider implements FlightProvider {
             ? 1.6
             : 1;
     const price = Math.round((routeBase + dateVar) * cabinMult * opts.adults);
+    const stops = dateVar > 90 ? 1 : 0;
+    // Duration varies by route + date so "fastest" and "cheapest" can differ.
+    const durationMinutes = 300 + (hash(q.origin + q.destination) % 360) + stops * 120 + (hash(q.date) % 50);
     return {
       price,
       currency: opts.currency || 'USD',
       airline: 'MockAir',
-      stops: dateVar > 90 ? 1 : 0,
-      durationLabel: '8h 00m',
+      stops,
+      durationMinutes,
+      durationLabel: minutesToLabel(durationMinutes),
       departTime: '09:00',
       arriveTime: '17:00',
       seatsLeft: 9,
       bookingLabel: `${q.origin}->${q.destination} ${q.date}`,
+      bookingUrl: googleFlightsUrl(q.origin, q.destination, q.date),
     };
   }
 }

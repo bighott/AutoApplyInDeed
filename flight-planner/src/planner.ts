@@ -51,31 +51,40 @@ function nightCombos(stops: TripStop[]): number[][] {
 }
 
 interface ItinerarySkeleton {
+  origin: string;
   startDate: string;
   nightsPerStop: number[];
   legs: LegQuery[];
 }
 
-/** Build every candidate itinerary (start offset × night combinations). */
+/** Normalized list of candidate origins (supports single `origin` or `origins[]`). */
+export function originsOf(spec: TripSpec): string[] {
+  const list = spec.origins && spec.origins.length ? spec.origins : [spec.origin];
+  return [...new Set(list.filter(Boolean))]; // de-dupe, keep order
+}
+
+/** Build every candidate itinerary (origin × start offset × night combinations). */
 export function enumerateItineraries(spec: TripSpec): ItinerarySkeleton[] {
   const out: ItinerarySkeleton[] = [];
   const flex = Math.max(1, spec.startFlexDays);
   const combos = nightCombos(spec.stops);
-  for (let off = 0; off < flex; off++) {
-    const startDate = addDays(spec.startDate, off);
-    for (const nights of combos) {
-      const legs: LegQuery[] = [];
-      let cursor = startDate;
-      let from = spec.origin;
-      spec.stops.forEach((stop, i) => {
-        legs.push({ origin: from, destination: stop.code, date: cursor });
-        cursor = addDays(cursor, nights[i]);
-        from = stop.code;
-      });
-      if (spec.returnToOrigin) {
-        legs.push({ origin: from, destination: spec.origin, date: cursor });
+  for (const origin of originsOf(spec)) {
+    for (let off = 0; off < flex; off++) {
+      const startDate = addDays(spec.startDate, off);
+      for (const nights of combos) {
+        const legs: LegQuery[] = [];
+        let cursor = startDate;
+        let from = origin;
+        spec.stops.forEach((stop, i) => {
+          legs.push({ origin: from, destination: stop.code, date: cursor });
+          cursor = addDays(cursor, nights[i]);
+          from = stop.code;
+        });
+        if (spec.returnToOrigin) {
+          legs.push({ origin: from, destination: origin, date: cursor });
+        }
+        out.push({ origin, startDate, nightsPerStop: nights, legs });
       }
-      out.push({ startDate, nightsPerStop: nights, legs });
     }
   }
   return out;
@@ -165,20 +174,73 @@ export async function planTrip(
     // Infeasible if any leg had no flights on its date.
     if (legs.some((l) => !l.quote)) continue;
     const total = legs.reduce((sum, l) => sum + (l.quote as FlightQuote).price, 0);
+    // Total flight time is known only if every leg reports a duration.
+    const durations = legs.map((l) => (l.quote as FlightQuote).durationMinutes);
+    const totalDurationMinutes = durations.every((d) => typeof d === 'number')
+      ? (durations as number[]).reduce((a, b) => a + b, 0)
+      : null;
     results.push({
+      origin: it.origin,
       startDate: it.startDate,
       nightsPerStop: it.nightsPerStop,
       legs,
       total,
       currency,
+      totalDurationMinutes,
     });
   }
   results.sort((a, b) => a.total - b.total);
 
   return {
     best: results[0] ?? null,
+    fastest: pickFastest(results),
+    bestValue: pickBestValue(results),
     allItineraries: results,
     legGrid,
     queriesRun: queries.length,
   };
+}
+
+/** Shortest total flight time among itineraries with known durations. */
+export function pickFastest(results: ItineraryResult[]): ItineraryResult | null {
+  const timed = results.filter((r) => r.totalDurationMinutes != null);
+  if (timed.length === 0) return null;
+  return timed.reduce((a, b) =>
+    (b.totalDurationMinutes as number) < (a.totalDurationMinutes as number) ? b : a,
+  );
+}
+
+/**
+ * Best price/time trade-off: min-max normalize price and flight time across the
+ * timed itineraries to [0,1] and score 60% price / 40% time (lower is better).
+ */
+export function pickBestValue(
+  results: ItineraryResult[],
+  priceWeight = 0.6,
+): ItineraryResult | null {
+  const timed = results.filter((r) => r.totalDurationMinutes != null);
+  if (timed.length === 0) return null;
+  if (timed.length === 1) return timed[0];
+
+  const prices = timed.map((r) => r.total);
+  const times = timed.map((r) => r.totalDurationMinutes as number);
+  const pMin = Math.min(...prices);
+  const pMax = Math.max(...prices);
+  const tMin = Math.min(...times);
+  const tMax = Math.max(...times);
+  const norm = (v: number, lo: number, hi: number) => (hi > lo ? (v - lo) / (hi - lo) : 0);
+  const timeWeight = 1 - priceWeight;
+
+  let best = timed[0];
+  let bestScore = Infinity;
+  for (const r of timed) {
+    const score =
+      priceWeight * norm(r.total, pMin, pMax) +
+      timeWeight * norm(r.totalDurationMinutes as number, tMin, tMax);
+    if (score < bestScore) {
+      bestScore = score;
+      best = r;
+    }
+  }
+  return best;
 }

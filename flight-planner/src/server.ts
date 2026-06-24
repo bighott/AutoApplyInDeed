@@ -17,6 +17,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
+import { searchAirports } from './airports';
 import { compareLegPrices, type NamedProvider } from './crosscheck';
 import { loadEnv, requireEnv } from './env';
 import { formatPlan } from './format';
@@ -49,8 +50,15 @@ function readBody(req: import('node:http').IncomingMessage): Promise<string> {
 /** Validate + coerce the posted spec into a TripSpec, throwing on bad input. */
 function toSpec(raw: any): TripSpec {
   if (!raw || typeof raw !== 'object') throw new Error('Missing trip spec');
-  const origin = String(raw.origin || '').trim().toUpperCase();
-  if (!origin) throw new Error('Origin is required');
+  const originList: string[] = Array.isArray(raw.origins) && raw.origins.length
+    ? raw.origins
+    : raw.origin
+      ? [raw.origin]
+      : [];
+  const origins = [
+    ...new Set(originList.map((o: any) => String(o).trim().toUpperCase()).filter(Boolean)),
+  ];
+  if (origins.length === 0) throw new Error('At least one origin airport is required');
   if (!Array.isArray(raw.stops) || raw.stops.length === 0) {
     throw new Error('Add at least one stop');
   }
@@ -81,7 +89,8 @@ function toSpec(raw: any): TripSpec {
   if (!allowed.includes(cabin)) throw new Error(`Cabin must be one of ${allowed.join(', ')}`);
 
   return {
-    origin,
+    origin: origins[0],
+    origins,
     stops,
     returnToOrigin: raw.returnToOrigin !== false,
     startDate,
@@ -140,6 +149,25 @@ const server = createServer(async (req, res) => {
 
     if (req.method === 'GET' && req.url === '/favicon.ico') {
       res.writeHead(204).end();
+      return;
+    }
+
+    // Whether a SerpApi key is configured — lets the UI warn before a failed run.
+    if (req.method === 'GET' && req.url === '/api/config') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ hasSerpApiKey: Boolean(process.env.SERPAPI_KEY) }));
+      return;
+    }
+
+    // Airport type-ahead for the UI's location fields.
+    if (req.method === 'GET' && req.url && req.url.startsWith('/api/airports')) {
+      const u = new URL(req.url, 'http://localhost');
+      const matches = searchAirports(
+        u.searchParams.get('q') || '',
+        Number(u.searchParams.get('limit')) || 8,
+      );
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify(matches));
       return;
     }
 

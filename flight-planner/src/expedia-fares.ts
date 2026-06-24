@@ -10,6 +10,7 @@
 
 import { StaticFlightProvider } from './provider';
 import type { FlightQuote, LegQuery } from './types';
+import { googleFlightsUrl, parseDurationToMinutes } from './util';
 
 function q(
   origin: string,
@@ -23,7 +24,16 @@ function q(
 ): [LegQuery, FlightQuote] {
   return [
     { origin, destination, date },
-    { price, currency: 'USD', airline, seatsLeft, stops, durationLabel },
+    {
+      price,
+      currency: 'USD',
+      airline,
+      seatsLeft,
+      stops,
+      durationLabel,
+      durationMinutes: parseDurationToMinutes(durationLabel),
+      bookingUrl: googleFlightsUrl(origin, destination, date),
+    },
   ];
 }
 

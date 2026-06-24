@@ -16,6 +16,7 @@
 
 import type { FlightProvider } from '../planner';
 import type { FlightQuote, LegQuery } from '../types';
+import { googleFlightsUrl, minutesToLabel } from '../util';
 
 /** Map our CabinClass to SerpApi `travel_class` (1=econ,2=prem,3=biz,4=first). */
 const TRAVEL_CLASS: Record<string, string> = {
@@ -24,11 +25,6 @@ const TRAVEL_CLASS: Record<string, string> = {
   BUSINESS: '3',
   FIRST: '4',
 };
-
-function minutesToLabel(total?: number): string | undefined {
-  if (!total || total <= 0) return undefined;
-  return `${Math.floor(total / 60)}h ${String(total % 60).padStart(2, '0')}m`;
-}
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 interface SerpFlightOption {
@@ -102,10 +98,12 @@ export class SerpApiGoogleFlightsProvider implements FlightProvider {
       currency,
       airline: airlines.join(', ') || undefined,
       stops: Math.max(0, segs.length - 1),
+      durationMinutes: best.total_duration,
       durationLabel: minutesToLabel(best.total_duration),
       departTime: segs[0]?.departure_airport?.time,
       arriveTime: segs[segs.length - 1]?.arrival_airport?.time,
       seatsLeft: null,
+      bookingUrl: googleFlightsUrl(q.origin, q.destination, q.date),
     };
   }
 }
