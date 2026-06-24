@@ -1,0 +1,17 @@
+{
+  "name": "flight-planner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Multi-city, multi-day flexible-date flight price planner. Provider-agnostic: given per-stop night ranges, it searches over multiple departure dates for the cheapest combination.",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "demo": "tsc && node dist/demo.js",
+    "example:live": "tsc && node dist/examples/sfo-nyc-london.js",
+    "test": "tsc && node --test dist/**/*.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.5.3"
+  }
+}
