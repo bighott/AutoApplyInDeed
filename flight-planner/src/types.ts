@@ -55,6 +55,10 @@ export interface FlightQuote {
   price: number;
   currency: string;
   airline?: string;
+  /** 2-letter IATA airline code, when known (for logo lookup). */
+  airlineCode?: string;
+  /** Direct airline logo URL, when the source provides one. */
+  airlineLogo?: string;
   stops?: number;
   durationLabel?: string;
   /** Total travel time in minutes (for ranking by flight time). */

@@ -108,7 +108,7 @@ $('form').onsubmit=async(e)=>{
 
 // ---- rendering --------------------------------------------------------------
 let STATE=null;
-function show(html){ $('results').innerHTML=`<h2>Results</h2>${html}`; }
+function show(html){ $('results').innerHTML=`<div class="results-head"><h2>Results</h2></div>${html}`; }
 const itinKey=(it)=>it?`${it.origin}>${it.returnOrigin||''}|${it.startDate}|${it.nightsPerStop.join(',')}`:'';
 const cityOf=(c)=>(STATE.cityByCode&&STATE.cityByCode[c])||c;
 
@@ -125,12 +125,63 @@ function explain(it){
   return s;
 }
 
+// --- airline logos -----------------------------------------------------------
+const AIRLINE_IATA = {
+  'American':'AA','American Airlines':'AA','Delta':'DL','Delta Air Lines':'DL','United':'UA','United Airlines':'UA',
+  'Southwest':'WN','Southwest Airlines':'WN','JetBlue':'B6','Alaska':'AS','Alaska Airlines':'AS','Spirit':'NK',
+  'Frontier':'F9','Hawaiian':'HA','Hawaiian Airlines':'HA',
+  'British Airways':'BA','Virgin Atlantic':'VS','Air France':'AF','KLM':'KL','Lufthansa':'LH','Swiss':'LX',
+  'Austrian':'OS','Brussels Airlines':'SN','Iberia':'IB','TAP':'TP','TAP Portugal':'TP','TAP Air Portugal':'TP',
+  'Ryanair':'FR','easyJet':'U2','Vueling':'VY','Norwegian':'DY','SAS':'SK','Finnair':'AY','Aer Lingus':'EI',
+  'ITA Airways':'AZ','Alitalia':'AZ','Turkish Airlines':'TK','Turkish':'TK','Aegean':'A3','LOT':'LO',
+  'Emirates':'EK','Qatar Airways':'QR','Qatar':'QR','Etihad':'EY','Saudia':'SV','Royal Jordanian':'RJ',
+  'Qantas':'QF','Air Canada':'AC','WestJet':'WS','Aeromexico':'AM','LATAM':'LA','Avianca':'AV','Copa':'CM',
+  'Copa Airlines':'CM','Azul':'AD','GOL':'G3',
+  'Singapore Airlines':'SQ','Cathay Pacific':'CX','ANA':'NH','All Nippon Airways':'NH','Japan Airlines':'JL',
+  'JAL':'JL','Korean Air':'KE','Asiana':'OZ','China Southern':'CZ','China Eastern':'MU','Air China':'CA',
+  'EVA Air':'BR','Thai Airways':'TG','Malaysia Airlines':'MH','Garuda Indonesia':'GA','Vietnam Airlines':'VN',
+  'IndiGo':'6E','Air India':'AI','Ethiopian':'ET','Ethiopian Airlines':'ET','South African Airways':'SA',
+  'Kenya Airways':'KQ','Royal Air Maroc':'AT','EgyptAir':'MS','El Al':'LY','Air New Zealand':'NZ','Fiji Airways':'FJ',
+};
+function iataFromName(name){ const first=String(name||'').split('/')[0].trim(); return AIRLINE_IATA[first]; }
+function monoColor(s){ let h=0; for(let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))>>>0; return `hsl(${h%360} 55% 48%)`; }
+function monoInitials(name){
+  const w=String(name||'').replace(/[^A-Za-z ]/g,'').trim().split(/\s+/).filter(Boolean);
+  if(!w.length) return '✈';
+  return (w[0][0]+(w[1]?w[1][0]:'')).toUpperCase();
+}
+function airlineLogoHtml(q){
+  const name=q.airline||'';
+  const initials=monoInitials(name), color=monoColor(name||'x');
+  const code=q.airlineCode||iataFromName(name);
+  const src=q.airlineLogo||(code?`https://pics.avs.io/120/120/${code}.png`:'');
+  if(src) return `<img class="flogo" src="${src}" alt="${escapeHtml(name)}" data-initials="${initials}" data-color="${color}" />`;
+  return `<div class="flmono" style="background:${color}">${initials}</div>`;
+}
+/** Attach onerror fallbacks (CSP-safe: no inline handlers) so broken logos become monograms. */
+function wireLogoFallbacks(root){
+  root.querySelectorAll('img.flogo').forEach(img=>{
+    const swap=()=>{ const d=document.createElement('div'); d.className='flmono'; d.style.background=img.dataset.color||'#9aa7b8'; d.textContent=img.dataset.initials||'✈'; img.replaceWith(d); };
+    img.onerror=swap;
+    if(img.complete && img.naturalWidth===0) swap();
+  });
+}
+function fmtTime(t){ const m=String(t==null?'':t).match(/(\d{1,2}:\d{2})/); return m?m[1]:''; }
+
 function legRow(l){
-  if(!l.quote) return `<div class="leg"><div><div class="route">${l.origin}→${l.destination}</div><div class="meta">${l.date}</div></div><div class="right"><div class="price soldout">no fare</div></div></div>`;
+  if(!l.quote) return `<div class="flrow"><div class="flmono" style="background:#aab6c6">✈</div>
+    <div><div class="flair">No flight found</div><div class="flsub">${l.origin} → ${l.destination} · ${l.date}</div></div>
+    <div class="flmid">—</div><div class="flright"><div class="flprice soldout">—</div></div></div>`;
   const q=l.quote;
-  const meta=[q.airline,q.stops!=null?`${q.stops} stop${q.stops===1?'':'s'}`:'',q.durationLabel,q.bookingLabel,q.seatsLeft===0?'sold out at this fare':''].filter(Boolean).join(' · ');
-  const book=q.bookingUrl?`<a class="booklink" href="${q.bookingUrl}" target="_blank" rel="noopener">Book ↗</a>`:'';
-  return `<div class="leg"><div><div class="route">${l.origin}→${l.destination} <span class="meta">${l.date}</span></div><div class="meta">${escapeHtml(meta)}</div></div><div class="right"><div class="price">${money(q.price,q.currency)}</div>${book}</div></div>`;
+  const times=(fmtTime(q.departTime)&&fmtTime(q.arriveTime))?`${fmtTime(q.departTime)} – ${fmtTime(q.arriveTime)}`:l.date;
+  const stops=q.stops===0?'Nonstop':(q.stops!=null?`${q.stops} stop${q.stops===1?'':'s'}`:'');
+  const book=q.bookingUrl?`<a class="flbook" href="${q.bookingUrl}" target="_blank" rel="noopener">Select</a>`:'';
+  return `<div class="flrow">
+    ${airlineLogoHtml(q)}
+    <div class="flinfo"><div class="flair">${escapeHtml(q.airline||'Flight')}</div><div class="flsub">${l.origin} → ${l.destination} · ${times}${q.seatsLeft===0?' · <span class="soldout">sold out at this fare</span>':''}</div></div>
+    <div class="flmid">${stops?`<span class="flbadge${q.stops===0?' nonstop':''}">${stops}</span>`:''}<div class="fldur">${q.durationLabel||''}</div></div>
+    <div class="flright"><div class="flprice">${money(q.price,q.currency)}</div>${book}</div>
+  </div>`;
 }
 
 function valueScores(rows){
@@ -157,7 +208,7 @@ function tripCard(it,rank,badges){
   const origins = it.returnOrigin && it.returnOrigin!==it.origin ? `${it.origin} → ${it.returnOrigin}` : it.origin;
   return `<div class="trip${rank===1?' top':''}">
     <div class="trip-head">
-      <div class="trip-rank">#${rank}</div>
+      <div class="trip-rank">${rank}</div>
       <div class="trip-badges">${badgeHtml}</div>
       <div class="trip-cost"><div class="trip-price">${money(it.total,cur)}</div><div class="trip-time">${fmtMins(it.totalDurationMinutes)} · from ${origins}</div></div>
     </div>
@@ -223,6 +274,7 @@ function render(){
   html+=`<details><summary>Raw text plan</summary><pre>${escapeHtml(STATE.textPlan)}</pre></details>`;
 
   show(html);
+  wireLogoFallbacks($('results'));
   document.querySelectorAll('#results .seg button').forEach(b=>b.onclick=()=>{ STATE.sort=b.dataset.sort; render(); });
   $('csvBtn').onclick=exportPlannerCsv;
   $('saveBtn').onclick=()=>{ saveTrip('planner'); flashSaved('saveBtn'); };
@@ -300,7 +352,7 @@ function readAdvisorSpec(){
 }
 
 let ASTATE=null;
-function ashow(html){ $('a-results').innerHTML=`<h2>Best routes</h2>${html}`; }
+function ashow(html){ $('a-results').innerHTML=`<div class="results-head"><h2>Best routes</h2></div>${html}`; }
 const acityOf=(c)=>(ASTATE.cityByCode&&ASTATE.cityByCode[c])||c;
 const aKey=(it)=>it?`${it.origin}>${it.returnOrigin||''}|${it.order.join('-')}|${it.startDate}|${it.nightsPerStop.join(',')}`:'';
 const aRoute=(it)=>`${acityOf(it.origin)} → ${it.order.map(acityOf).join(' → ')} → ${acityOf(it.returnOrigin||it.origin)}`;
@@ -321,7 +373,7 @@ function aTripCard(it,rank,badges){
   const badgeHtml=badges.map(b=>`<span class="badge ${b.cls}">${b.lab}</span>`).join('');
   return `<div class="trip${rank===1?' top':''}">
     <div class="trip-head">
-      <div class="trip-rank">#${rank}</div>
+      <div class="trip-rank">${rank}</div>
       <div class="trip-badges">${badgeHtml}</div>
       <div class="trip-cost"><div class="trip-price">${money(it.total,cur)}</div><div class="trip-time">${fmtMins(it.totalDurationMinutes)}</div></div>
     </div>
@@ -367,6 +419,7 @@ function renderAdvisor(){
     sorted.map((it,i)=>`<tr><td>${i+1}</td><td class="num">${money(it.total,cur)}</td><td class="num">${fmtMins(it.totalDurationMinutes)}</td><td>${escapeHtml(aRoute(it))}</td><td>[${it.nightsPerStop.join(', ')}]</td><td>${it.startDate}</td></tr>`).join('')+
     `</tbody></table></details>`;
   ashow(html);
+  wireLogoFallbacks($('a-results'));
   document.querySelectorAll('#a-results .seg button').forEach(b=>b.onclick=()=>{ ASTATE.sort=b.dataset.asort; renderAdvisor(); });
   $('a-csvBtn').onclick=exportAdvisorCsv;
   $('a-saveBtn').onclick=()=>{ saveTrip('advisor'); flashSaved('a-saveBtn'); };

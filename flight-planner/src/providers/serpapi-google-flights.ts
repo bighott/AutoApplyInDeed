@@ -30,8 +30,11 @@ const TRAVEL_CLASS: Record<string, string> = {
 interface SerpFlightOption {
   price?: number;
   total_duration?: number;
+  airline_logo?: string;
   flights?: Array<{
     airline?: string;
+    airline_logo?: string;
+    flight_number?: string;
     departure_airport?: { time?: string };
     arrival_airport?: { time?: string };
   }>;
@@ -92,11 +95,15 @@ export class SerpApiGoogleFlightsProvider implements FlightProvider {
     const best = all[0];
     const segs = best.flights ?? [];
     const airlines = [...new Set(segs.map((s) => s.airline).filter(Boolean))];
+    // First segment's flight number prefix is the operating airline's IATA code.
+    const code = segs[0]?.flight_number?.trim().slice(0, 2).toUpperCase();
 
     return {
       price: best.price as number,
       currency,
       airline: airlines.join(', ') || undefined,
+      airlineCode: code && /^[A-Z0-9]{2}$/.test(code) ? code : undefined,
+      airlineLogo: best.airline_logo || segs[0]?.airline_logo || undefined,
       stops: Math.max(0, segs.length - 1),
       durationMinutes: best.total_duration,
       durationLabel: minutesToLabel(best.total_duration),

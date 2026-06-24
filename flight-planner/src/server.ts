@@ -63,7 +63,8 @@ function cachedSerp(key: string): FlightProvider {
 // not a script-injection vector.
 const CSP =
   "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
-  "img-src 'self' data:; connect-src 'self'; base-uri 'self'; frame-ancestors 'none'";
+  "img-src 'self' data: https://pics.avs.io https://www.gstatic.com https://*.gstatic.com https://lh3.googleusercontent.com; " +
+  "connect-src 'self'; base-uri 'self'; frame-ancestors 'none'";
 
 function readBody(req: import('node:http').IncomingMessage): Promise<string> {
   return new Promise((res, rej) => {
