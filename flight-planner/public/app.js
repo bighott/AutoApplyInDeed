@@ -76,18 +76,25 @@ addStop('LHR','London',3,4);
 // ---- provider hint + key warning -------------------------------------------
 const HINTS={ mock:'Demo prices. Works for any route instantly — great for trying the app, no key or cost.',
   serpapi:'Real fares via Google Flights (uses your SERPAPI_KEY). One billed search per unique leg/date.',
+  travelpayouts:'Free, real (cached) prices from Travelpayouts/Aviasales. Needs a free TRAVELPAYOUTS_TOKEN. No per-search cost.',
+  amadeus:'Real bookable fares from Amadeus (free tier). Needs AMADEUS_CLIENT_ID & SECRET. Counts toward the search budget.',
   expedia:'Free Expedia fare snapshot — no key, no cost, but only covers the seeded SFO/JFK/LHR July-2026 legs.',
   crosscheck:'Google Flights (live) vs the Expedia snapshot, picks the cheaper per leg.' };
-const NEEDS_KEY=(v)=>v==='serpapi'||v==='crosscheck';
-let HAS_KEY=true;
-function updateHint(){
-  $('providerHint').textContent=HINTS[$('provider').value];
-  const needsKey=NEEDS_KEY($('provider').value);
-  $('keyWarn').innerHTML=(needsKey&&!HAS_KEY)
-    ? `<div class="banner warn">No <b>SERPAPI_KEY</b> detected. Create <code>flight-planner/.env</code> with your key, or use <b>Mock</b> to test now.</div>` : '';
+// Which .env credential each source needs (mock/expedia need none).
+const NEEDS_CRED={ serpapi:'SERPAPI_KEY', crosscheck:'SERPAPI_KEY', travelpayouts:'TRAVELPAYOUTS_TOKEN', amadeus:'AMADEUS_CLIENT_ID & AMADEUS_CLIENT_SECRET' };
+let CRED={ serpapi:false, travelpayouts:false, amadeus:false };
+function providerReady(v){
+  if(v==='mock'||v==='expedia') return true;
+  if(v==='crosscheck') return CRED.serpapi;
+  return !!CRED[v];
 }
+function credWarn(v, slotId){
+  const ready=providerReady(v), need=NEEDS_CRED[v];
+  $(slotId).innerHTML=(ready||!need)?'':`<div class="banner warn">This source needs <b>${need}</b> in <code>flight-planner/.env</code>. Use <b>Demo</b> or <b>Expedia</b> meanwhile.</div>`;
+}
+function updateHint(){ $('providerHint').textContent=HINTS[$('provider').value]; credWarn($('provider').value,'keyWarn'); }
 $('provider').onchange=updateHint;
-fetch('/api/config').then(r=>r.json()).then(c=>{ HAS_KEY=!!c.hasSerpApiKey; updateHint(); aUpdateHint(); }).catch(()=>{});
+fetch('/api/config').then(r=>r.json()).then(c=>{ if(c.providers) CRED=c.providers; updateHint(); aUpdateHint(); }).catch(()=>{});
 updateHint();
 
 // ---- submit -----------------------------------------------------------------
@@ -337,9 +344,7 @@ $('a-addDest').onclick=()=>addADest();
 // advisor provider hint
 function aUpdateHint(){
   $('a-providerHint').textContent=HINTS[$('a-provider').value];
-  const needsKey=NEEDS_KEY($('a-provider').value);
-  $('a-keyWarn').innerHTML=(needsKey&&!HAS_KEY)
-    ? `<div class="banner warn">No <b>SERPAPI_KEY</b> detected. Use <b>Demo</b> or <b>Expedia</b>, or add your key to <code>flight-planner/.env</code>. Note: live route search makes many requests.</div>` : '';
+  credWarn($('a-provider').value,'a-keyWarn');
 }
 $('a-provider').onchange=aUpdateHint;
 

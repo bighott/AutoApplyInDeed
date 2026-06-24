@@ -36,6 +36,8 @@ import {
   StaticFlightProvider,
 } from './provider';
 import { SerpApiGoogleFlightsProvider } from './providers/serpapi-google-flights';
+import { TravelpayoutsProvider } from './providers/travelpayouts';
+import { AmadeusProvider } from './providers/amadeus';
 import type { FlightQuote, TripSpec } from './types';
 
 loadEnv();
@@ -50,13 +52,32 @@ const MAX_SEARCHES = Number(process.env.MAX_SEARCHES) || 250;
 // Shared across requests and both tabs, so overlapping/repeated legs are free.
 const fareCache = new Map<string, { quote: import('./types').FlightQuote | null; expires: number }>();
 
+// Underlying providers are singletons so stateful auth (Amadeus OAuth token) persists.
+const singletons: Record<string, FlightProvider> = {};
+function singleton(kind: string, make: () => FlightProvider): FlightProvider {
+  if (!singletons[kind]) singletons[kind] = make();
+  return singletons[kind];
+}
+function cached(namespace: string, inner: FlightProvider): FlightProvider {
+  return new CachingProvider(inner, fareCache, { ttlMs: FARE_TTL_MS, namespace });
+}
+
 /** A SerpApi provider wrapped in the shared TTL cache. */
 function cachedSerp(key: string): FlightProvider {
-  return new CachingProvider(new SerpApiGoogleFlightsProvider(key), fareCache, {
-    ttlMs: FARE_TTL_MS,
-    namespace: 'serpapi',
-  });
+  return cached('serpapi', singleton('serpapi', () => new SerpApiGoogleFlightsProvider(key)));
 }
+function cachedTravelpayouts(): FlightProvider {
+  return cached('travelpayouts', singleton('travelpayouts',
+    () => new TravelpayoutsProvider(requireEnv('TRAVELPAYOUTS_TOKEN'))));
+}
+function cachedAmadeus(): FlightProvider {
+  return cached('amadeus', singleton('amadeus',
+    () => new AmadeusProvider(requireEnv('AMADEUS_CLIENT_ID'), requireEnv('AMADEUS_CLIENT_SECRET'),
+      { host: process.env.AMADEUS_HOSTNAME })));
+}
+
+/** Live, quota-billed sources (the budget cap applies to these). */
+const BILLED = new Set(['serpapi', 'amadeus', 'crosscheck']);
 
 // Strict policy: same-origin scripts only, NO eval / inline script. Inline
 // styles are allowed ('unsafe-inline' in style-src) — that's a style concern,
@@ -143,6 +164,16 @@ async function runPlan(spec: TripSpec, providerKind: string) {
     return { plan, comparison: null };
   }
 
+  if (providerKind === 'travelpayouts') {
+    const plan = await planTrip(cachedTravelpayouts(), spec); // free tier — no budget cap
+    return { plan, comparison: null };
+  }
+
+  if (providerKind === 'amadeus') {
+    const plan = await planTrip(cachedAmadeus(), spec, { maxSearches: MAX_SEARCHES });
+    return { plan, comparison: null };
+  }
+
   if (providerKind === 'serpapi') {
     const plan = await planTrip(cachedSerp(requireEnv('SERPAPI_KEY')), spec, {
       maxSearches: MAX_SEARCHES,
@@ -185,6 +216,8 @@ async function runPlan(spec: TripSpec, providerKind: string) {
 function makeProvider(kind: string): FlightProvider {
   if (kind === 'mock') return new MockFlightProvider();
   if (kind === 'expedia') return expediaStaticProvider;
+  if (kind === 'travelpayouts') return cachedTravelpayouts();
+  if (kind === 'amadeus') return cachedAmadeus();
   if (kind === 'serpapi') return cachedSerp(requireEnv('SERPAPI_KEY'));
   if (kind === 'crosscheck') {
     return new CheapestOfProvider([
@@ -279,7 +312,14 @@ const server = createServer(async (req, res) => {
     // Whether a SerpApi key is configured — lets the UI warn before a failed run.
     if (req.method === 'GET' && path === '/api/config') {
       res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ hasSerpApiKey: Boolean(process.env.SERPAPI_KEY) }));
+      res.end(JSON.stringify({
+        hasSerpApiKey: Boolean(process.env.SERPAPI_KEY),
+        providers: {
+          serpapi: Boolean(process.env.SERPAPI_KEY),
+          travelpayouts: Boolean(process.env.TRAVELPAYOUTS_TOKEN),
+          amadeus: Boolean(process.env.AMADEUS_CLIENT_ID && process.env.AMADEUS_CLIENT_SECRET),
+        },
+      }));
       return;
     }
 
@@ -327,7 +367,7 @@ const server = createServer(async (req, res) => {
       const spec = toAdvisorSpec(body.spec);
       const provider = String(body.provider || 'mock');
       const result = await planAdvisor(makeProvider(provider), spec, {
-        maxSearches: provider === 'mock' || provider === 'expedia' ? undefined : MAX_SEARCHES,
+        maxSearches: BILLED.has(provider) ? MAX_SEARCHES : undefined,
       });
       const cityByCode: Record<string, string> = {};
       for (const code of [...spec.origins, ...spec.destinations.map((d) => d.code)]) {
