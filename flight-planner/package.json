@@ -7,6 +7,7 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "demo": "tsc && node dist/demo.js",
+    "ui": "tsc && node dist/server.js",
     "example:live": "tsc && node dist/examples/sfo-nyc-london.js",
     "example:serpapi": "tsc && node dist/examples/live-serpapi.js",
     "example:crosscheck": "tsc && node dist/examples/crosscheck-serpapi-expedia.js",
