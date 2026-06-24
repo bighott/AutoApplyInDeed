@@ -334,6 +334,45 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    // Diagnostic: show the raw upstream response for one leg, plus what we mapped.
+    if (req.method === 'GET' && path === '/api/debug-leg') {
+      const origin = (u.searchParams.get('origin') || '').toUpperCase();
+      const destination = (u.searchParams.get('destination') || '').toUpperCase();
+      const date = u.searchParams.get('date') || '';
+      const currency = (u.searchParams.get('currency') || 'USD').toUpperCase();
+      const prov = u.searchParams.get('provider') || 'travelpayouts';
+      const out: any = { provider: prov, leg: { origin, destination, date } };
+      try {
+        if (prov === 'travelpayouts') {
+          const token = requireEnv('TRAVELPAYOUTS_TOKEN');
+          const tu = new URL('https://api.travelpayouts.com/aviasales/v3/prices_for_dates');
+          tu.searchParams.set('origin', origin);
+          tu.searchParams.set('destination', destination);
+          tu.searchParams.set('departure_at', date);
+          tu.searchParams.set('one_way', 'true');
+          tu.searchParams.set('currency', currency.toLowerCase());
+          tu.searchParams.set('sorting', 'price');
+          tu.searchParams.set('limit', '3');
+          tu.searchParams.set('token', token);
+          const r = await fetch(tu, { headers: { 'x-access-token': token } });
+          out.status = r.status;
+          out.rawBody = (await r.text()).slice(0, 1500);
+          out.requestUrl = tu.toString().replace(token, '***');
+        } else {
+          out.error = `debug not implemented for "${prov}" (use travelpayouts)`;
+        }
+        out.mapped = await makeProvider(prov).searchCheapest(
+          { origin, destination, date },
+          { adults: 1, cabin: 'ECONOMY', currency },
+        );
+      } catch (e) {
+        out.error = e instanceof Error ? e.message : String(e);
+      }
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify(out, null, 2));
+      return;
+    }
+
     if (req.method === 'POST' && path === '/api/plan') {
       const body = JSON.parse((await readBody(req)) || '{}');
       const spec = toSpec(body.spec);
