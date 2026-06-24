@@ -2,17 +2,6 @@ const $ = (id) => document.getElementById(id);
 const money = (n,c) => n==null ? '—' : `${c} ${Number(n).toFixed(2)}`;
 const fmtMins = (m) => m==null ? '—' : `${Math.floor(m/60)}h ${String(m%60).padStart(2,'0')}m`;
 const escapeHtml = (s) => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const nf = (n) => Number(n).toLocaleString('en-US');
-
-// ---- points programs (cents-per-point defaults) -----------------------------
-const POINTS_PROGRAMS = [
-  ['Chase Ultimate Rewards',2.0],['Amex Membership Rewards',2.0],['Capital One Miles',1.85],
-  ['Citi ThankYou',1.8],['Bilt Rewards',2.05],['United MileagePlus',1.35],['American AAdvantage',1.4],
-  ['Delta SkyMiles',1.2],['Southwest Rapid Rewards',1.4],['JetBlue TrueBlue',1.3],
-  ['Alaska Mileage Plan',1.45],['Air Canada Aeroplan',1.5],['British Airways Avios',1.5],['Virgin Atlantic Points',1.5],
-];
-const CPP = Object.fromEntries(POINTS_PROGRAMS.map(([n,c])=>[n,c]));
-$('progList').innerHTML = POINTS_PROGRAMS.map(([n])=>`<option value="${n}">`).join('');
 
 // ---- autocomplete -----------------------------------------------------------
 async function fetchAirports(q){ try { const r=await fetch(`/api/airports?q=${encodeURIComponent(q)}&limit=8`); return r.ok?r.json():[]; } catch { return []; } }
@@ -68,28 +57,6 @@ function addStop(code='',label='',min=2,max=3){
 }
 $('addStop').onclick=()=>addStop();
 
-// ---- points program rows ----------------------------------------------------
-function addProgram(name='',cpp='',balance=''){
-  const el=document.createElement('div'); el.className='prog-row';
-  el.innerHTML=`<input class="p-name" aria-label="Points program" list="progList" placeholder="Program" value="${name}" />
-    <input class="p-cpp" aria-label="Cents per point" type="number" step="0.05" min="0" placeholder="¢/pt" value="${cpp}" />
-    <input class="p-bal" aria-label="Points balance" type="number" min="0" placeholder="balance" value="${balance}" />
-    <button type="button" class="xbtn" title="Remove program" aria-label="Remove program">✕</button>`;
-  el.querySelector('.xbtn').onclick=()=>el.remove();
-  const nameI=el.querySelector('.p-name'), cppI=el.querySelector('.p-cpp');
-  nameI.addEventListener('input',()=>{ if(CPP[nameI.value] && !cppI.value) cppI.value=CPP[nameI.value]; });
-  nameI.addEventListener('change',()=>{ if(CPP[nameI.value]) cppI.value=CPP[nameI.value]; });
-  $('programs').appendChild(el);
-}
-$('addProgram').onclick=()=>addProgram();
-function readPrograms(){
-  return [...document.querySelectorAll('.prog-row')].map(el=>({
-    name: el.querySelector('.p-name').value.trim(),
-    cpp: Number(el.querySelector('.p-cpp').value),
-    balance: Number(el.querySelector('.p-bal').value)||0,
-  })).filter(p=>p.name && p.cpp>0);
-}
-
 // seed defaults
 addOrigin('SFO');
 addStop('JFK','New York',2,3);
@@ -133,13 +100,13 @@ $('form').onsubmit=async(e)=>{
       body:JSON.stringify({ spec:readSpec(), provider:$('provider').value }) });
     const data=await res.json();
     if(!data.ok) throw new Error(data.error||'Request failed');
-    STATE=data; STATE.sort='price'; PROGRAMS=readPrograms(); render();
+    STATE=data; STATE.sort='price'; render();
   } catch(err){ show(`<div class="error"><b>Error:</b> ${escapeHtml(err.message)}</div>`); }
   finally { btn.disabled=false; btn.textContent='Search flights'; }
 };
 
 // ---- rendering --------------------------------------------------------------
-let STATE=null, PROGRAMS=[];
+let STATE=null;
 function show(html){ $('results').innerHTML=`<h2>Results</h2>${html}`; }
 const itinKey=(it)=>it?`${it.origin}>${it.returnOrigin||''}|${it.startDate}|${it.nightsPerStop.join(',')}`:'';
 const cityOf=(c)=>(STATE.cityByCode&&STATE.cityByCode[c])||c;
@@ -163,17 +130,6 @@ function legRow(l){
   const meta=[q.airline,q.stops!=null?`${q.stops} stop${q.stops===1?'':'s'}`:'',q.durationLabel,q.bookingLabel,q.seatsLeft===0?'sold out at this fare':''].filter(Boolean).join(' · ');
   const book=q.bookingUrl?`<a class="booklink" href="${q.bookingUrl}" target="_blank" rel="noopener">Book ↗</a>`:'';
   return `<div class="leg"><div><div class="route">${l.origin}→${l.destination} <span class="meta">${l.date}</span></div><div class="meta">${escapeHtml(meta)}</div></div><div class="right"><div class="price">${money(q.price,q.currency)}</div>${book}</div></div>`;
-}
-
-function pointsBlock(it){
-  if(!PROGRAMS.length) return '';
-  const items=PROGRAMS.map(p=>{
-    const pts=Math.round(it.total*100/p.cpp);
-    let cover='';
-    if(p.balance>0) cover = p.balance>=pts ? `<span class="ok">✓ covered (have ${nf(p.balance)})</span>` : `<span class="short">short ${nf(pts-p.balance)}</span>`;
-    return `<div class="pt"><span class="pt-name">${escapeHtml(p.name)}</span><b>~${nf(pts)} pts</b><span class="pt-cpp">@ ${p.cpp}¢/pt</span> ${cover}</div>`;
-  }).join('');
-  return `<div class="trip-points"><div class="pt-title">Estimated points cost (estimate, not live award pricing)</div>${items}</div>`;
 }
 
 function valueScores(rows){
@@ -206,7 +162,6 @@ function tripCard(it,rank,badges){
     </div>
     <div class="trip-explain">${escapeHtml(explain(it))}</div>
     <div class="trip-legs">${it.legs.map(legRow).join('')}</div>
-    ${pointsBlock(it)}
   </div>`;
 }
 
