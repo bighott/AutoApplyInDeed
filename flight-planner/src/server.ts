@@ -142,7 +142,11 @@ const server = createServer(async (req, res) => {
   try {
     if (req.method === 'GET' && (req.url === '/' || req.url === '/index.html')) {
       const html = await readFile(INDEX);
-      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      res.writeHead(200, {
+        'content-type': 'text/html; charset=utf-8',
+        // Never cache the UI shell — avoids stale JS after an update.
+        'cache-control': 'no-store, must-revalidate',
+      });
       res.end(html);
       return;
     }

@@ -301,16 +301,19 @@ fetch('/api/config').then(r=>r.json()).then(c=>{ HAS_KEY=!!c.hasSerpApiKey; upda
 updateHint();
 
 // ---- submit -----------------------------------------------------------------
+function val(id){ const el=$(id); if(!el) throw new Error(`UI out of date (missing #${id}). Hard-refresh the page (Ctrl+F5).`); return el.value; }
+function qsv(el,sel){ const n=el.querySelector(sel); return n?n.value:''; }
 function readSpec(){
   const origins=[...document.querySelectorAll('.o-code')].map(i=>i.value.trim().toUpperCase()).filter(Boolean);
+  if(!origins.length) throw new Error('Add at least one origin airport.');
   const stops=[...document.querySelectorAll('.stop')].map(el=>({
-    code: el.querySelector('.s-code').value.trim().toUpperCase(),
-    label: el.querySelector('.s-label').value.trim()||undefined,
-    minNights:Number(el.querySelector('.s-min').value), maxNights:Number(el.querySelector('.s-max').value),
+    code: qsv(el,'.s-code').trim().toUpperCase(),
+    label: qsv(el,'.s-label').trim()||undefined,
+    minNights:Number(qsv(el,'.s-min')), maxNights:Number(qsv(el,'.s-max')),
   }));
   return { origin:origins[0], origins, stops, returnToOrigin:$('returnToOrigin').checked,
-    startDate:$('startDate').value, startFlexDays:Number($('startFlexDays').value),
-    adults:Number($('adults').value), cabin:$('cabin').value, currency:$('currency').value.trim().toUpperCase()||'USD' };
+    startDate:val('startDate'), startFlexDays:Number(val('startFlexDays')),
+    adults:Number(val('adults')), cabin:val('cabin'), currency:val('currency').trim().toUpperCase()||'USD' };
 }
 $('form').onsubmit=async(e)=>{
   e.preventDefault(); const btn=$('run'); btn.disabled=true; btn.textContent='Searching…';
