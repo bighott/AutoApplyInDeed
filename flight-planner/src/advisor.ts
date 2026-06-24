@@ -12,6 +12,7 @@
 
 import {
   addDays,
+  budgetError,
   pickBestValue,
   pickFastest,
   priceWithLimit,
@@ -68,6 +69,8 @@ export interface AdvisorOptions {
   maxDestinations?: number;
   /** How many ranked itineraries to return (keeps the payload small). Default 50. */
   maxResults?: number;
+  /** Budget cap: max billed (uncached) leg lookups allowed (default Infinity). */
+  maxSearches?: number;
 }
 
 interface AdvisorSkeleton {
@@ -200,12 +203,11 @@ export async function planAdvisor(
 
   const skeletons = enumerateAdvisor(spec, options.maxRoutes ?? 80000);
   const queries = uniqueLegQueries(skeletons);
-  const priced = await priceWithLimit(
-    provider,
-    queries,
-    { adults: spec.adults, cabin: spec.cabin, currency },
-    options.concurrency ?? 6,
-  );
+  const searchOpts = { adults: spec.adults, cabin: spec.cabin, currency };
+  const maxSearches = options.maxSearches ?? Infinity;
+  const billable = provider.countBillable?.(queries, searchOpts) ?? queries.length;
+  if (billable > maxSearches) throw budgetError(billable, maxSearches);
+  const priced = await priceWithLimit(provider, queries, searchOpts, options.concurrency ?? 6);
 
   const results: ItineraryResult[] = [];
   for (const sk of skeletons) {

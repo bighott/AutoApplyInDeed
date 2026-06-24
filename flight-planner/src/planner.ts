@@ -20,6 +20,15 @@ export interface FlightProvider {
     query: LegQuery,
     opts: { adults: number; cabin: string; currency?: string },
   ): Promise<FlightQuote | null>;
+  /**
+   * Optional: how many of these legs would actually cost a billed API call
+   * (i.e. are not already cached). Lets the budget cap count real spend, not
+   * gross leg count. Providers without it are treated as "all billable".
+   */
+  countBillable?(
+    queries: LegQuery[],
+    opts: { adults: number; cabin: string; currency?: string },
+  ): number;
 }
 
 /** Add `n` days to an ISO yyyy-mm-dd date (UTC, DST-safe). */
@@ -150,6 +159,17 @@ export interface PlanOptions {
   concurrency?: number;
   /** Guard against combinatorial blow-up (default 1000 itineraries). */
   maxItineraries?: number;
+  /** Budget cap: max billed (uncached) leg lookups allowed (default Infinity). */
+  maxSearches?: number;
+}
+
+/** Format the over-budget error shared by planner + advisor. */
+export function budgetError(billable: number, max: number): Error {
+  return new Error(
+    `This search would need ${billable} live flight lookups (limit ${max}). ` +
+      'Narrow the dates, nights, or places — or use Mock to explore for free. ' +
+      'Repeats within the cache window are free.',
+  );
 }
 
 /**
@@ -172,12 +192,11 @@ export async function planTrip(
   }
 
   const queries = uniqueLegQueries(itineraries);
-  const priced = await priceWithLimit(
-    provider,
-    queries,
-    { adults: spec.adults, cabin: spec.cabin, currency },
-    options.concurrency ?? 4,
-  );
+  const searchOpts = { adults: spec.adults, cabin: spec.cabin, currency };
+  const maxSearches = options.maxSearches ?? Infinity;
+  const billable = provider.countBillable?.(queries, searchOpts) ?? queries.length;
+  if (billable > maxSearches) throw budgetError(billable, maxSearches);
+  const priced = await priceWithLimit(provider, queries, searchOpts, options.concurrency ?? 4);
 
   const legGrid: PricedLeg[] = queries.map((q) => ({
     ...q,

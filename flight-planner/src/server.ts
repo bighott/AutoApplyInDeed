@@ -19,11 +19,18 @@ import { resolve } from 'node:path';
 
 import { cityOf, searchAirports } from './airports';
 import { planAdvisor, type AdvisorSpec } from './advisor';
+import { CachingProvider } from './cache';
 import { CheapestOfProvider, compareLegPrices, type NamedProvider } from './crosscheck';
 import { loadEnv, requireEnv } from './env';
 import { formatPlan } from './format';
 import { expediaStaticProvider } from './expedia-fares';
-import { planTrip, type FlightProvider } from './planner';
+import {
+  budgetError,
+  enumerateItineraries,
+  planTrip,
+  uniqueLegQueries,
+  type FlightProvider,
+} from './planner';
 import {
   MockFlightProvider,
   StaticFlightProvider,
@@ -36,6 +43,20 @@ loadEnv();
 const PORT = Number(process.env.PORT) || 8787;
 const PUBLIC = resolve(process.cwd(), 'public');
 const INDEX = resolve(PUBLIC, 'index.html');
+
+// --- fare cache + budget cap (token-saving) ----------------------------------
+const FARE_TTL_MS = (Number(process.env.FARE_TTL_MIN) || 30) * 60_000;
+const MAX_SEARCHES = Number(process.env.MAX_SEARCHES) || 250;
+// Shared across requests and both tabs, so overlapping/repeated legs are free.
+const fareCache = new Map<string, { quote: import('./types').FlightQuote | null; expires: number }>();
+
+/** A SerpApi provider wrapped in the shared TTL cache. */
+function cachedSerp(key: string): FlightProvider {
+  return new CachingProvider(new SerpApiGoogleFlightsProvider(key), fareCache, {
+    ttlMs: FARE_TTL_MS,
+    namespace: 'serpapi',
+  });
+}
 
 // Strict policy: same-origin scripts only, NO eval / inline script. Inline
 // styles are allowed ('unsafe-inline' in style-src) — that's a style concern,
@@ -117,15 +138,22 @@ async function runPlan(spec: TripSpec, providerKind: string) {
   }
 
   if (providerKind === 'serpapi') {
-    const key = requireEnv('SERPAPI_KEY');
-    const plan = await planTrip(new SerpApiGoogleFlightsProvider(key), spec);
+    const plan = await planTrip(cachedSerp(requireEnv('SERPAPI_KEY')), spec, {
+      maxSearches: MAX_SEARCHES,
+    });
     return { plan, comparison: null };
   }
 
   if (providerKind === 'crosscheck') {
-    const key = requireEnv('SERPAPI_KEY');
+    const serp = cachedSerp(requireEnv('SERPAPI_KEY'));
+    // Enforce the budget on the SerpApi side before pricing (Expedia is free).
+    const legs = uniqueLegQueries(enumerateItineraries(spec));
+    const opts = { adults: spec.adults, cabin: spec.cabin, currency: spec.currency || 'USD' };
+    const billable = (serp as FlightProvider).countBillable?.(legs, opts) ?? legs.length;
+    if (billable > MAX_SEARCHES) throw budgetError(billable, MAX_SEARCHES);
+
     const named: NamedProvider[] = [
-      { name: 'SerpApi', provider: new SerpApiGoogleFlightsProvider(key) },
+      { name: 'SerpApi', provider: serp },
       { name: 'Expedia', provider: expediaStaticProvider },
     ];
     // Price once via the comparison, then plan on the cheapest-per-leg result
@@ -147,14 +175,13 @@ async function runPlan(spec: TripSpec, providerKind: string) {
   throw new Error(`Unknown provider "${providerKind}"`);
 }
 
-/** A single FlightProvider for the advisor (cheapest-of for cross-check). */
+/** A single (cached) FlightProvider for the advisor; cheapest-of for cross-check. */
 function makeProvider(kind: string): FlightProvider {
   if (kind === 'mock') return new MockFlightProvider();
-  if (kind === 'serpapi') return new SerpApiGoogleFlightsProvider(requireEnv('SERPAPI_KEY'));
+  if (kind === 'serpapi') return cachedSerp(requireEnv('SERPAPI_KEY'));
   if (kind === 'crosscheck') {
-    const key = requireEnv('SERPAPI_KEY');
     return new CheapestOfProvider([
-      { name: 'SerpApi', provider: new SerpApiGoogleFlightsProvider(key) },
+      { name: 'SerpApi', provider: cachedSerp(requireEnv('SERPAPI_KEY')) },
       { name: 'Expedia', provider: expediaStaticProvider },
     ]);
   }
@@ -291,7 +318,9 @@ const server = createServer(async (req, res) => {
       const body = JSON.parse((await readBody(req)) || '{}');
       const spec = toAdvisorSpec(body.spec);
       const provider = String(body.provider || 'mock');
-      const result = await planAdvisor(makeProvider(provider), spec);
+      const result = await planAdvisor(makeProvider(provider), spec, {
+        maxSearches: provider === 'mock' ? undefined : MAX_SEARCHES,
+      });
       const cityByCode: Record<string, string> = {};
       for (const code of [...spec.origins, ...spec.destinations.map((d) => d.code)]) {
         const city = cityOf(code);

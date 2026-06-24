@@ -34,6 +34,17 @@ export class CheapestOfProvider implements FlightProvider {
     }
   }
 
+  /** Billed calls = sum of each sub-provider's billable count (free ones report none). */
+  countBillable(
+    queries: LegQuery[],
+    opts: { adults: number; cabin: string; currency?: string },
+  ): number {
+    return this.providers.reduce(
+      (sum, { provider }) => sum + (provider.countBillable?.(queries, opts) ?? 0),
+      0,
+    );
+  }
+
   async searchCheapest(
     q: LegQuery,
     opts: { adults: number; cabin: string; currency?: string },
