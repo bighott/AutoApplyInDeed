@@ -89,6 +89,11 @@ export class AmadeusProvider implements FlightProvider {
     const segs: any[] = itin?.segments ?? [];
     const code = segs[0]?.carrierCode;
     const mins = isoDurationToMin(itin?.duration);
+    // Included checked bags (min across segments) from the fare details.
+    const incl = (offer.travelerPricings?.[0]?.fareDetailsBySegment ?? [])
+      .map((f: any) => f?.includedCheckedBags?.quantity)
+      .filter((n: any) => typeof n === 'number');
+    const includedBags = incl.length ? Math.min(...incl) : undefined;
     return {
       price: Number(offer.price?.total),
       currency: offer.price?.currency ?? (opts.currency ?? 'USD').toUpperCase(),
@@ -100,6 +105,7 @@ export class AmadeusProvider implements FlightProvider {
       durationLabel: minutesToLabel(mins),
       departTime: segs[0]?.departure?.at,
       arriveTime: segs[segs.length - 1]?.arrival?.at,
+      includedBags,
       seatsLeft: typeof offer.numberOfBookableSeats === 'number' ? offer.numberOfBookableSeats : null,
       bookingUrl: googleFlightsUrl(q.origin, q.destination, q.date),
       segments: segs.map((s) => ({

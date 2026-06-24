@@ -81,6 +81,8 @@ export interface FlightQuote {
   durationMinutes?: number;
   departTime?: string;
   arriveTime?: string;
+  /** Checked bags already included in the fare (Amadeus), when known. */
+  includedBags?: number;
   /** Seats left on the cheapest fare; null when unknown. */
   seatsLeft?: number | null;
   bookingLabel?: string;

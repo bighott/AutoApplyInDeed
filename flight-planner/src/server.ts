@@ -79,6 +79,18 @@ function cachedAmadeus(): FlightProvider {
 /** Live, quota-billed sources (the budget cap applies to these). */
 const BILLED = new Set(['serpapi', 'amadeus', 'crosscheck']);
 
+/** Every source the user has configured — used by cross-check to fill gaps. */
+function configuredSources(): NamedProvider[] {
+  const out: NamedProvider[] = [];
+  if (process.env.SERPAPI_KEY) out.push({ name: 'Google Flights', provider: cachedSerp(requireEnv('SERPAPI_KEY')) });
+  if (process.env.TRAVELPAYOUTS_TOKEN) out.push({ name: 'Travelpayouts', provider: cachedTravelpayouts() });
+  if (process.env.AMADEUS_CLIENT_ID && process.env.AMADEUS_CLIENT_SECRET) {
+    out.push({ name: 'Amadeus', provider: cachedAmadeus() });
+  }
+  out.push({ name: 'Expedia', provider: expediaStaticProvider }); // always available, free
+  return out;
+}
+
 // Strict policy: same-origin scripts only, NO eval / inline script. Inline
 // styles are allowed ('unsafe-inline' in style-src) — that's a style concern,
 // not a script-injection vector.
@@ -207,19 +219,16 @@ async function runPlan(spec: TripSpec, providerKind: string) {
   }
 
   if (providerKind === 'crosscheck') {
-    const serp = cachedSerp(requireEnv('SERPAPI_KEY'));
-    // Enforce the budget on the SerpApi side before pricing (Expedia is free).
+    // Combine every configured source and take the cheapest per leg, so a gap in
+    // one (e.g. Travelpayouts) is filled by another (Amadeus / Google / Expedia).
+    const named = configuredSources();
     const legs = uniqueLegQueries(enumerateItineraries(spec).skeletons);
-    const opts = { adults: spec.adults, cabin: spec.cabin, currency: spec.currency || 'USD' };
-    const billable = (serp as FlightProvider).countBillable?.(legs, opts) ?? legs.length;
+    const opts = { adults: spec.adults, cabin: spec.cabin, currency: spec.currency || 'USD', excludeAirlines: spec.excludeAirlines };
+    const billable = named.reduce((sum, { provider }) => sum + (provider.countBillable?.(legs, opts) ?? 0), 0);
     if (billable > MAX_SEARCHES) throw budgetError(billable, MAX_SEARCHES);
 
-    const named: NamedProvider[] = [
-      { name: 'SerpApi', provider: serp },
-      { name: 'Expedia', provider: expediaStaticProvider },
-    ];
     // Price once via the comparison, then plan on the cheapest-per-leg result
-    // (a StaticFlightProvider) so we don't bill SerpApi a second time.
+    // (a StaticFlightProvider) so we don't bill the live sources a second time.
     const comparison = await compareLegPrices(spec, named);
     const entries = comparison.rows.map((r) => {
       const src = r.cheapestProvider;
@@ -244,12 +253,7 @@ function makeProvider(kind: string): FlightProvider {
   if (kind === 'travelpayouts') return cachedTravelpayouts();
   if (kind === 'amadeus') return cachedAmadeus();
   if (kind === 'serpapi') return cachedSerp(requireEnv('SERPAPI_KEY'));
-  if (kind === 'crosscheck') {
-    return new CheapestOfProvider([
-      { name: 'SerpApi', provider: cachedSerp(requireEnv('SERPAPI_KEY')) },
-      { name: 'Expedia', provider: expediaStaticProvider },
-    ]);
-  }
+  if (kind === 'crosscheck') return new CheapestOfProvider(configuredSources());
   throw new Error(`Unknown provider "${kind}"`);
 }
 
