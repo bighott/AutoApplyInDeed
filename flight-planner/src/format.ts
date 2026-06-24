@@ -32,8 +32,15 @@ function legLine(l: PricedLeg): string {
 
 function itineraryBlock(title: string, spec: TripSpec, it: ItineraryResult): string[] {
   const lines: string[] = [title];
+  const totalNights = it.nightsPerStop.reduce((a, b) => a + b, 0);
+  const ret =
+    it.returnOrigin && it.returnOrigin !== it.origin
+      ? ` → home into ${it.returnOrigin}`
+      : it.returnOrigin
+        ? ' (round trip)'
+        : '';
   lines.push(
-    `   From ${it.origin}, start ${it.startDate}, nights: ${spec.stops
+    `   From ${it.origin}${ret}, start ${it.startDate}, ${totalNights} nights total: ${spec.stops
       .map((s, i) => `${s.label || s.code} ${it.nightsPerStop[i]}`)
       .join(', ')}`,
   );
@@ -79,8 +86,8 @@ export function formatPlan(spec: TripSpec, result: PlanResult): string {
 
   // Surface fastest and best-value only when they differ from the cheapest.
   const sameItin = (a: ItineraryResult | null, b: ItineraryResult | null) =>
-    a && b && a.origin === b.origin && a.startDate === b.startDate &&
-    a.nightsPerStop.join() === b.nightsPerStop.join();
+    !!a && !!b && a.origin === b.origin && a.returnOrigin === b.returnOrigin &&
+    a.startDate === b.startDate && a.nightsPerStop.join() === b.nightsPerStop.join();
   if (result.fastest && !sameItin(result.fastest, result.best)) {
     lines.push(...itineraryBlock('⚡ FASTEST', spec, result.fastest));
     lines.push('');

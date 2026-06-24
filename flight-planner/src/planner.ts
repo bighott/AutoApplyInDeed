@@ -52,6 +52,7 @@ function nightCombos(stops: TripStop[]): number[][] {
 
 interface ItinerarySkeleton {
   origin: string;
+  returnOrigin: string | null;
   startDate: string;
   nightsPerStop: number[];
   legs: LegQuery[];
@@ -68,22 +69,40 @@ export function enumerateItineraries(spec: TripSpec): ItinerarySkeleton[] {
   const out: ItinerarySkeleton[] = [];
   const flex = Math.max(1, spec.startFlexDays);
   const combos = nightCombos(spec.stops);
-  for (const origin of originsOf(spec)) {
+  const origins = originsOf(spec);
+  for (const departOrigin of origins) {
     for (let off = 0; off < flex; off++) {
       const startDate = addDays(spec.startDate, off);
       for (const nights of combos) {
-        const legs: LegQuery[] = [];
+        const baseLegs: LegQuery[] = [];
         let cursor = startDate;
-        let from = origin;
+        let from = departOrigin;
         spec.stops.forEach((stop, i) => {
-          legs.push({ origin: from, destination: stop.code, date: cursor });
+          baseLegs.push({ origin: from, destination: stop.code, date: cursor });
           cursor = addDays(cursor, nights[i]);
           from = stop.code;
         });
         if (spec.returnToOrigin) {
-          legs.push({ origin: from, destination: origin, date: cursor });
+          // Return to ANY origin — try each so an asymmetric round trip (leave
+          // from one city, fly home into another) can win on price.
+          for (const returnOrigin of origins) {
+            out.push({
+              origin: departOrigin,
+              returnOrigin,
+              startDate,
+              nightsPerStop: nights,
+              legs: [...baseLegs, { origin: from, destination: returnOrigin, date: cursor }],
+            });
+          }
+        } else {
+          out.push({
+            origin: departOrigin,
+            returnOrigin: null,
+            startDate,
+            nightsPerStop: nights,
+            legs: baseLegs,
+          });
         }
-        out.push({ origin, startDate, nightsPerStop: nights, legs });
       }
     }
   }
@@ -181,6 +200,7 @@ export async function planTrip(
       : null;
     results.push({
       origin: it.origin,
+      returnOrigin: it.returnOrigin,
       startDate: it.startDate,
       nightsPerStop: it.nightsPerStop,
       legs,

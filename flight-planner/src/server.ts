@@ -17,7 +17,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
-import { searchAirports } from './airports';
+import { cityOf, searchAirports } from './airports';
 import { compareLegPrices, type NamedProvider } from './crosscheck';
 import { loadEnv, requireEnv } from './env';
 import { formatPlan } from './format';
@@ -176,6 +176,13 @@ const server = createServer(async (req, res) => {
       const spec = toSpec(body.spec);
       const provider = String(body.provider || 'mock');
       const { plan, comparison } = await runPlan(spec, provider);
+      // City names for every code in the trip, so the UI can write plain-English
+      // explanations and auto-fill labels.
+      const cityByCode: Record<string, string> = {};
+      for (const code of [...(spec.origins ?? [spec.origin]), ...spec.stops.map((s) => s.code)]) {
+        const city = cityOf(code);
+        if (city) cityByCode[code] = city;
+      }
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(
         JSON.stringify({
@@ -184,6 +191,7 @@ const server = createServer(async (req, res) => {
           spec,
           plan,
           comparison,
+          cityByCode,
           textPlan: formatPlan(spec, plan),
         }),
       );

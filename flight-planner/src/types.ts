@@ -73,8 +73,10 @@ export interface PricedLeg extends LegQuery {
 }
 
 export interface ItineraryResult {
-  /** Origin airport this itinerary departs from / returns to. */
+  /** Origin airport this itinerary departs from. */
   origin: string;
+  /** Origin airport the return leg flies into (may differ from `origin`); null if no return. */
+  returnOrigin: string | null;
   /** Concrete start date used for this itinerary. */
   startDate: string;
   /** Nights chosen at each stop (parallel to TripSpec.stops). */

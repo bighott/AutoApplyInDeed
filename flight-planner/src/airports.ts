@@ -285,6 +285,13 @@ export const AIRPORTS: Airport[] = RAW.map(([iata, city, name, country]) => ({
   country,
 }));
 
+const CITY_BY_IATA = new Map(AIRPORTS.map((a) => [a.iata, a.city]));
+
+/** City name for an IATA code, or undefined if not in the directory. */
+export function cityOf(code: string): string | undefined {
+  return CITY_BY_IATA.get(String(code).trim().toUpperCase());
+}
+
 /** Ranked type-ahead search over the embedded directory. */
 export function searchAirports(query: string, limit = 8): Airport[] {
   const q = query.trim().toLowerCase();
