@@ -70,6 +70,18 @@ export interface FlightQuote {
   bookingLabel?: string;
   /** Clickable link to view/book this leg. */
   bookingUrl?: string;
+  /** Individual flight segments when the leg connects (e.g. JFK→KEF→LHR). */
+  segments?: FlightSegment[];
+}
+
+export interface FlightSegment {
+  from?: string;
+  to?: string;
+  airline?: string;
+  airlineCode?: string;
+  flightNumber?: string;
+  departTime?: string;
+  arriveTime?: string;
 }
 
 export interface PricedLeg extends LegQuery {

@@ -35,8 +35,8 @@ interface SerpFlightOption {
     airline?: string;
     airline_logo?: string;
     flight_number?: string;
-    departure_airport?: { time?: string };
-    arrival_airport?: { time?: string };
+    departure_airport?: { id?: string; time?: string };
+    arrival_airport?: { id?: string; time?: string };
   }>;
 }
 
@@ -111,6 +111,14 @@ export class SerpApiGoogleFlightsProvider implements FlightProvider {
       arriveTime: segs[segs.length - 1]?.arrival_airport?.time,
       seatsLeft: null,
       bookingUrl: googleFlightsUrl(q.origin, q.destination, q.date),
+      segments: segs.map((s) => ({
+        from: s.departure_airport?.id,
+        to: s.arrival_airport?.id,
+        airline: s.airline,
+        flightNumber: s.flight_number,
+        departTime: s.departure_airport?.time,
+        arriveTime: s.arrival_airport?.time,
+      })),
     };
   }
 }

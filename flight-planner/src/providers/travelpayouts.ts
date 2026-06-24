@@ -17,6 +17,18 @@ export interface TravelpayoutsOptions {
   fetchImpl?: typeof fetch;
 }
 
+/** Best-effort: pull the airport chain (e.g. JFK,KEF,LHR) out of an Aviasales link. */
+function airportChain(link?: string): string[] | undefined {
+  if (typeof link !== 'string') return undefined;
+  const t = /[?&]t=([^&]+)/.exec(link);
+  const v = t ? t[1] : link;
+  const m = /([A-Z]{6,})_/.exec(v);
+  if (!m || m[1].length % 3 !== 0) return undefined;
+  const codes: string[] = [];
+  for (let i = 0; i < m[1].length; i += 3) codes.push(m[1].slice(i, i + 3));
+  return codes.length >= 2 ? codes : undefined;
+}
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export class TravelpayoutsProvider implements FlightProvider {
   private readonly endpoint: string;
@@ -49,6 +61,11 @@ export class TravelpayoutsProvider implements FlightProvider {
 
     const code = typeof f.airline === 'string' ? f.airline.toUpperCase() : undefined;
     const dur = typeof f.duration === 'number' && f.duration > 0 ? f.duration : undefined;
+    const chain = airportChain(f.link);
+    const segments =
+      chain && chain.length >= 2
+        ? chain.slice(0, -1).map((from, i) => ({ from, to: chain[i + 1], airlineCode: code }))
+        : undefined;
     return {
       price: Number(f.price),
       currency,
@@ -62,6 +79,7 @@ export class TravelpayoutsProvider implements FlightProvider {
       bookingUrl: f.link
         ? `https://www.aviasales.com${f.link}`
         : googleFlightsUrl(q.origin, q.destination, q.date),
+      segments,
     };
   }
 

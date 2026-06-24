@@ -186,6 +186,14 @@ function wireLogoFallbacks(root){
   });
 }
 function fmtTime(t){ const m=String(t==null?'':t).match(/(\d{1,2}:\d{2})/); return m?m[1]:''; }
+function segsHtml(q){
+  const s=q.segments; if(!s||s.length<2) return '';
+  const chain=[s[0].from, ...s.map(x=>x.to)].filter(Boolean);
+  const air=[...new Set(s.map(x=>x.airline||x.airlineCode).filter(Boolean))].join(', ');
+  const layovers=chain.slice(1,-1);
+  const title=s.map(x=>`${x.from||'?'}${fmtTime(x.departTime)?' '+fmtTime(x.departTime):''} → ${x.to||'?'}${x.flightNumber?' ('+x.flightNumber+')':''}`).join('  •  ');
+  return `<div class="flsegs" title="${escapeHtml(title)}">${escapeHtml(chain.join(' → '))}${layovers.length?` · ${s.length} flights via ${escapeHtml(layovers.join(', '))}`:''}${air?` · ${escapeHtml(air)}`:''}</div>`;
+}
 
 function legRow(l){
   if(!l.quote) return `<div class="flrow"><div class="flmono" style="background:#aab6c6">✈</div>
@@ -197,7 +205,7 @@ function legRow(l){
   const book=q.bookingUrl?`<a class="flbook" href="${q.bookingUrl}" target="_blank" rel="noopener">Select</a>`:'';
   return `<div class="flrow">
     ${airlineLogoHtml(q)}
-    <div class="flinfo"><div class="flair">${escapeHtml(q.airline||'Flight')}</div><div class="flsub">${l.origin} → ${l.destination} · ${times}${q.seatsLeft===0?' · <span class="soldout">sold out at this fare</span>':''}</div></div>
+    <div class="flinfo"><div class="flair">${escapeHtml(q.airline||'Flight')}</div><div class="flsub">${l.origin} → ${l.destination} · ${times}${q.seatsLeft===0?' · <span class="soldout">sold out at this fare</span>':''}</div>${segsHtml(q)}</div>
     <div class="flmid">${stops?`<span class="flbadge${q.stops===0?' nonstop':''}">${stops}</span>`:''}<div class="fldur">${q.durationLabel||''}</div></div>
     <div class="flright"><div class="flprice">${money(q.price,q.currency)}</div>${book}</div>
   </div>`;

@@ -101,6 +101,14 @@ export class AmadeusProvider implements FlightProvider {
       arriveTime: segs[segs.length - 1]?.arrival?.at,
       seatsLeft: typeof offer.numberOfBookableSeats === 'number' ? offer.numberOfBookableSeats : null,
       bookingUrl: googleFlightsUrl(q.origin, q.destination, q.date),
+      segments: segs.map((s) => ({
+        from: s.departure?.iataCode,
+        to: s.arrival?.iataCode,
+        airlineCode: s.carrierCode,
+        flightNumber: s.number ? `${s.carrierCode}${s.number}` : undefined,
+        departTime: s.departure?.at,
+        arriveTime: s.arrival?.at,
+      })),
     };
   }
 }
