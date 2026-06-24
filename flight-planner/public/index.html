@@ -40,6 +40,9 @@
   .btn-primary:disabled { opacity:.6; cursor:progress; }
   .btn-ghost { background:var(--panel-2); color:var(--text); border:1px dashed var(--line); width:100%; }
   .btn-ghost:hover { border-color:var(--accent); color:var(--accent); }
+  .mini { width:auto; padding:6px 11px; font-size:13px; border:1px solid var(--line); border-radius:8px; background:var(--panel-2); color:var(--text); cursor:pointer; font-weight:600; }
+  .mini:hover { border-color:var(--accent); color:var(--accent); }
+  .saved-row { display:flex; justify-content:space-between; gap:12px; align-items:center; border:1px solid var(--line); background:var(--panel-2); border-radius:11px; padding:12px 14px; margin-bottom:10px; }
   .inline { display:flex; align-items:center; gap:8px; }
   .inline input[type=checkbox]{ width:auto; }
   .hint { font-size:12px; color:var(--muted); margin-top:6px; }
@@ -131,6 +134,7 @@
   <div class="tabs">
     <button class="tab act" data-pane="planner">Multi-city Planner</button>
     <button class="tab" data-pane="advisor">✦ Plan my trip</button>
+    <button class="tab" data-pane="saved">★ Saved trips</button>
   </div>
 
   <div id="pane-planner" class="pane act">
@@ -249,6 +253,16 @@
     </div>
   </div>
   </div><!-- /pane-advisor -->
+
+  <div id="pane-saved" class="pane">
+  <div class="wrap" style="grid-template-columns:1fr">
+    <div class="card">
+      <h2>Saved trips</h2>
+      <p class="hint" style="margin-top:-8px">Saved searches live in this browser. Reopening one costs <b>no API searches</b> — you see exactly the options you saved.</p>
+      <div id="saved-list"></div>
+    </div>
+  </div>
+  </div><!-- /pane-saved -->
 
 <script src="/app.js"></script>
 </body>

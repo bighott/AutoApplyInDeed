@@ -187,6 +187,7 @@ function render(){
 
   const seg=(k,lab)=>`<button class="${STATE.sort===k?'act':''}" data-sort="${k}">${lab}</button>`;
   let html=`<div class="toolbar"><span class="lbl">Top 5 by</span><div class="seg">${seg('price','Cheapest')}${seg('time','Fastest')}${seg('value','Best value')}</div>`+
+    `<button class="mini" id="csvBtn">⬇ Export CSV</button><button class="mini" id="saveBtn">★ Save</button>`+
     `<span class="lbl" style="margin-left:auto">${plan.allItineraries.length} options · ${plan.queriesRun} searches</span></div>`;
   html+=cards;
 
@@ -223,6 +224,8 @@ function render(){
 
   show(html);
   document.querySelectorAll('#results .seg button').forEach(b=>b.onclick=()=>{ STATE.sort=b.dataset.sort; render(); });
+  $('csvBtn').onclick=exportPlannerCsv;
+  $('saveBtn').onclick=()=>{ saveTrip('planner'); flashSaved('saveBtn'); };
 }
 
 // ============================================================================
@@ -230,12 +233,13 @@ function render(){
 // ============================================================================
 
 // tab switching
-document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
-  document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('act',x===t));
-  const p=t.dataset.pane;
-  $('pane-planner').classList.toggle('act',p==='planner');
-  $('pane-advisor').classList.toggle('act',p==='advisor');
-});
+const PANES=['planner','advisor','saved'];
+function showTab(name){
+  document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('act', x.dataset.pane===name));
+  PANES.forEach(n=>$('pane-'+n).classList.toggle('act', n===name));
+  if(name==='saved') renderSavedList();
+}
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>showTab(t.dataset.pane));
 
 // advisor origins
 function addAOrigin(code=''){
@@ -355,6 +359,7 @@ function renderAdvisor(){
   }).join('');
   const seg=(k,lab)=>`<button class="${ASTATE.sort===k?'act':''}" data-asort="${k}">${lab}</button>`;
   let html=`<div class="toolbar"><span class="lbl">Top 5 by</span><div class="seg">${seg('price','Cheapest')}${seg('time','Fastest')}${seg('value','Best value')}</div>`+
+    `<button class="mini" id="a-csvBtn">⬇ Export CSV</button><button class="mini" id="a-saveBtn">★ Save</button>`+
     `<span class="lbl" style="margin-left:auto">${r.ordersPriced}/${r.permutationsTried} orders · ${r.routesConsidered.toLocaleString()} routes · ${r.queriesRun} searches</span></div>`;
   if(r.sampled) html+=`<div class="banner warn">Wide search: I sampled start dates (every ${r.dateStepDays} day${r.dateStepDays===1?'':'s'}) and some trip-length splits to stay fast. Narrow the date window or set per-place night ranges for finer results.</div>`;
   html+=cards;
@@ -363,4 +368,74 @@ function renderAdvisor(){
     `</tbody></table></details>`;
   ashow(html);
   document.querySelectorAll('#a-results .seg button').forEach(b=>b.onclick=()=>{ ASTATE.sort=b.dataset.asort; renderAdvisor(); });
+  $('a-csvBtn').onclick=exportAdvisorCsv;
+  $('a-saveBtn').onclick=()=>{ saveTrip('advisor'); flashSaved('a-saveBtn'); };
+}
+
+// ============================================================================
+// CSV export + Saved trips
+// ============================================================================
+function csvCell(v){ const s=String(v==null?'':v); return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s; }
+function downloadFile(name, text, mime){
+  const blob=new Blob([text],{type:mime}); const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=name; document.body.appendChild(a); a.click();
+  a.remove(); setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
+function pathLabel(it){ return [...it.legs.map(l=>l.origin), it.legs[it.legs.length-1].destination].join(' → '); }
+
+function legsToCsvRows(itins, routeLabelFn){
+  const header=['Option','Route','From','To','Date','Airline','Stops','Duration','Price','Currency','Book'];
+  const rows=[header];
+  itins.forEach((it,i)=>{
+    it.legs.forEach(l=>{ const q=l.quote||{};
+      rows.push([i+1, routeLabelFn(it), l.origin, l.destination, l.date, q.airline||'', q.stops==null?'':q.stops, q.durationLabel||'', q.price==null?'':q.price, q.currency||'', q.bookingUrl||'']);
+    });
+  });
+  return rows.map(r=>r.map(csvCell).join(',')).join('\r\n');
+}
+function exportPlannerCsv(){
+  if(!STATE||!STATE.plan) return;
+  downloadFile('flight-plan.csv', legsToCsvRows(STATE.plan.allItineraries.slice(0,5), pathLabel), 'text/csv;charset=utf-8');
+}
+function exportAdvisorCsv(){
+  if(!ASTATE||!ASTATE.result) return;
+  downloadFile('plan-my-trip.csv', legsToCsvRows(ASTATE.result.allItineraries.slice(0,5), aRoute), 'text/csv;charset=utf-8');
+}
+
+const SAVED_KEY='ff_saved';
+function loadSaved(){ try { return JSON.parse(localStorage.getItem(SAVED_KEY)||'[]'); } catch { return []; } }
+function persistSaved(items){ localStorage.setItem(SAVED_KEY, JSON.stringify(items.slice(0,30))); }
+function flashSaved(id){ const b=$(id); if(!b) return; const t=b.textContent; b.textContent='Saved ✓'; setTimeout(()=>{ b.textContent=t; }, 1500); }
+
+function saveTrip(kind){
+  const items=loadSaved();
+  let label, data;
+  if(kind==='planner'){
+    if(!STATE||!STATE.plan||!STATE.plan.best) return;
+    const b=STATE.plan.best; label=`${pathLabel(b)} · ${money(b.total, STATE.spec.currency||'USD')}`;
+    data={...STATE, plan:{...STATE.plan, allItineraries:STATE.plan.allItineraries.slice(0,10)}};
+  } else {
+    if(!ASTATE||!ASTATE.result||!ASTATE.result.best) return;
+    const b=ASTATE.result.best; label=`${aRoute(b)} · ${money(b.total, ASTATE.spec.currency||'USD')}`;
+    data={...ASTATE, result:{...ASTATE.result, allItineraries:ASTATE.result.allItineraries.slice(0,10)}};
+  }
+  items.unshift({ id:Date.now()+'-'+Math.random().toString(36).slice(2), kind, label, savedAt:new Date().toISOString(), data });
+  persistSaved(items);
+}
+function deleteSaved(id){ persistSaved(loadSaved().filter(e=>e.id!==id)); renderSavedList(); }
+function viewSaved(id){
+  const e=loadSaved().find(x=>x.id===id); if(!e) return;
+  if(e.kind==='planner'){ STATE=e.data; STATE.sort='price'; showTab('planner'); render(); }
+  else { ASTATE=e.data; ASTATE.sort='price'; showTab('advisor'); renderAdvisor(); }
+}
+function renderSavedList(){
+  const items=loadSaved();
+  if(!items.length){ $('saved-list').innerHTML=`<div class="empty">No saved trips yet. Run a search and click <b>★ Save</b> in the results.</div>`; return; }
+  $('saved-list').innerHTML=items.map(e=>`<div class="saved-row">
+    <div><div style="font-weight:600">${e.kind==='advisor'?'✦ ':''}${escapeHtml(e.label)}</div>
+      <div class="meta">${e.kind==='advisor'?'Plan my trip':'Multi-city planner'} · saved ${escapeHtml(new Date(e.savedAt).toLocaleString())}</div></div>
+    <div style="display:flex;gap:8px"><button class="mini" data-view="${e.id}">View</button><button class="xbtn" data-del="${e.id}" title="Delete" aria-label="Delete">✕</button></div>
+  </div>`).join('');
+  $('saved-list').querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>viewSaved(b.dataset.view));
+  $('saved-list').querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>deleteSaved(b.dataset.del));
 }
