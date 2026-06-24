@@ -370,8 +370,11 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    if (req.method === 'GET' && path === '/app.js') {
-      const js = await readFile(resolve(PUBLIC, 'app.js'));
+    // App entry (module) and its ES-module dependencies under /js/*.mjs.
+    // Whitelisted, dot-free filenames only — no path traversal.
+    if (req.method === 'GET' && (path === '/app.js' || /^\/js\/[a-z0-9_-]+\.mjs$/i.test(path))) {
+      const rel = path === '/app.js' ? 'app.js' : `js/${path.slice('/js/'.length)}`;
+      const js = await readFile(resolve(PUBLIC, rel));
       res.writeHead(200, {
         'content-type': 'text/javascript; charset=utf-8',
         'content-security-policy': CSP,
