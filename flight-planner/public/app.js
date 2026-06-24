@@ -52,8 +52,9 @@ function addStop(code='',label='',min=2,max=3){
   el.querySelector('.xbtn').onclick=()=>{ if(document.querySelectorAll('.stop').length>1) el.remove(); };
   $('stops').appendChild(el);
   const lab=el.querySelector('.s-label');
-  lab.addEventListener('input',()=>{ lab.dataset.auto=''; });
-  attachAutocomplete(el.querySelector('.s-code'),(a)=>{ if(!lab.value || lab.dataset.auto==='1'){ lab.value=a.city; lab.dataset.auto='1'; } });
+  // Always set the label to the selected airport's city, overwriting whatever
+  // was there — the label should track the chosen stop airport.
+  attachAutocomplete(el.querySelector('.s-code'),(a)=>{ lab.value=a.city; });
 }
 $('addStop').onclick=()=>addStop();
 
