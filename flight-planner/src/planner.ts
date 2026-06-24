@@ -12,7 +12,6 @@ import type {
   PricedLeg,
   SearchOpts,
   TripSpec,
-  TripStop,
 } from './types';
 
 export interface FlightProvider {
@@ -38,22 +37,6 @@ export function legKey(q: LegQuery): string {
   return `${q.origin}|${q.destination}|${q.date}`;
 }
 
-/** Cartesian product of each stop's [minNights, maxNights] choices. */
-function nightCombos(stops: TripStop[]): number[][] {
-  let combos: number[][] = [[]];
-  for (const s of stops) {
-    if (s.maxNights < s.minNights) {
-      throw new Error(`Stop ${s.code}: maxNights < minNights`);
-    }
-    const next: number[][] = [];
-    for (const c of combos) {
-      for (let n = s.minNights; n <= s.maxNights; n++) next.push([...c, n]);
-    }
-    combos = next;
-  }
-  return combos;
-}
-
 interface ItinerarySkeleton {
   origin: string;
   returnOrigin: string | null;
@@ -62,55 +45,131 @@ interface ItinerarySkeleton {
   legs: LegQuery[];
 }
 
+export interface ItineraryEnumeration {
+  skeletons: ItinerarySkeleton[];
+  /** True if combos/start dates were sampled to stay efficient. */
+  sampled: boolean;
+  /** Largest start-date step used when sampling (1 = every day). */
+  dateStepDays: number;
+}
+
+function daysBetween(a: string, b: string): number {
+  return Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
+}
+
+/** Count night-combos of [min_i, max_i] with optional sum cap (DP). */
+function countRangeCombos(mins: number[], maxes: number[], capSum: number): number {
+  const k = mins.length;
+  const minSuf = new Array(k + 1).fill(0);
+  for (let i = k - 1; i >= 0; i--) minSuf[i] = minSuf[i + 1] + mins[i];
+  const memo = new Map<number, number>();
+  const rec = (i: number, used: number): number => {
+    if (i === k) return 1;
+    const key = i * 1_000_003 + used;
+    const c = memo.get(key);
+    if (c !== undefined) return c;
+    const hi = Math.min(maxes[i], capSum === Infinity ? maxes[i] : capSum - used - minSuf[i + 1]);
+    let tot = 0;
+    for (let n = mins[i]; n <= hi; n++) tot += rec(i + 1, used + n);
+    memo.set(key, tot);
+    return tot;
+  };
+  return rec(0, 0);
+}
+
+/** Night-combos with optional sum cap, evenly sampled by `stride`, capped at `cap`. */
+function rangeCombos(mins: number[], maxes: number[], capSum: number, stride: number, cap: number): number[][] {
+  const k = mins.length;
+  const minSuf = new Array(k + 1).fill(0);
+  for (let i = k - 1; i >= 0; i--) minSuf[i] = minSuf[i + 1] + mins[i];
+  const out: number[][] = [];
+  const acc: number[] = [];
+  let idx = 0;
+  const rec = (i: number, used: number): void => {
+    if (out.length >= cap) return;
+    if (i === k) {
+      if (idx % stride === 0) out.push(acc.slice());
+      idx++;
+      return;
+    }
+    const hi = Math.min(maxes[i], capSum === Infinity ? maxes[i] : capSum - used - minSuf[i + 1]);
+    for (let n = mins[i]; n <= hi; n++) {
+      acc.push(n);
+      rec(i + 1, used + n);
+      acc.pop();
+      if (out.length >= cap) return;
+    }
+  };
+  rec(0, 0);
+  return out;
+}
+
 /** Normalized list of candidate origins (supports single `origin` or `origins[]`). */
 export function originsOf(spec: TripSpec): string[] {
   const list = spec.origins && spec.origins.length ? spec.origins : [spec.origin];
   return [...new Set(list.filter(Boolean))]; // de-dupe, keep order
 }
 
-/** Build every candidate itinerary (origin × start offset × night combinations). */
-export function enumerateItineraries(spec: TripSpec): ItinerarySkeleton[] {
-  const out: ItinerarySkeleton[] = [];
-  const flex = Math.max(1, spec.startFlexDays);
-  const combos = nightCombos(spec.stops);
+/**
+ * Build candidate itineraries (origin × start date × night combinations). Stay
+ * lengths run from each stop's minNights up to its maxNights — or, when maxNights
+ * is omitted and an endDate is set, up to whatever fits the window. Wide windows
+ * are sampled (combos + start dates) to stay efficient.
+ */
+export function enumerateItineraries(spec: TripSpec): ItineraryEnumeration {
   const origins = originsOf(spec);
-  for (const departOrigin of origins) {
-    for (let off = 0; off < flex; off++) {
+  const stops = spec.stops;
+  const mins = stops.map((s) => Math.max(0, s.minNights));
+  const windowDays = spec.endDate ? Math.max(0, daysBetween(spec.startDate, spec.endDate)) : null;
+  const maxes = stops.map((s, i) => {
+    if (s.maxNights != null) return Math.max(s.maxNights, mins[i]);
+    if (windowDays != null) return windowDays;
+    return mins[i]; // no max, no window → fixed nights
+  });
+
+  const SKELETON_BUDGET = 8000;
+  const COMBO_CAP = 800;
+  const originPairs = origins.length * (spec.returnToOrigin ? origins.length : 1);
+  const flex = Math.max(1, spec.startFlexDays);
+  const capSum = windowDays != null ? windowDays : Infinity;
+
+  const comboTotal = countRangeCombos(mins, maxes, capSum);
+  const comboStride = comboTotal > COMBO_CAP ? Math.ceil(comboTotal / COMBO_CAP) : 1;
+  const combos = rangeCombos(mins, maxes, capSum, comboStride, COMBO_CAP);
+
+  let sampled = comboStride > 1;
+  let dateStepDays = 1;
+  const out: ItinerarySkeleton[] = [];
+  const offPerCombo = Math.max(1, Math.floor(SKELETON_BUDGET / (Math.max(1, combos.length) * Math.max(1, originPairs))));
+
+  for (const nights of combos) {
+    const sum = nights.reduce((a, b) => a + b, 0);
+    const offMax = windowDays != null ? Math.max(0, windowDays - sum) : flex - 1;
+    const step = offMax + 1 > offPerCombo ? Math.ceil((offMax + 1) / offPerCombo) : 1;
+    if (step > 1) { sampled = true; dateStepDays = Math.max(dateStepDays, step); }
+    for (let off = 0; off <= offMax; off += step) {
       const startDate = addDays(spec.startDate, off);
-      for (const nights of combos) {
-        const baseLegs: LegQuery[] = [];
+      for (const departOrigin of origins) {
+        const legs: LegQuery[] = [];
         let cursor = startDate;
         let from = departOrigin;
-        spec.stops.forEach((stop, i) => {
-          baseLegs.push({ origin: from, destination: stop.code, date: cursor });
+        stops.forEach((stop, i) => {
+          legs.push({ origin: from, destination: stop.code, date: cursor });
           cursor = addDays(cursor, nights[i]);
           from = stop.code;
         });
         if (spec.returnToOrigin) {
-          // Return to ANY origin — try each so an asymmetric round trip (leave
-          // from one city, fly home into another) can win on price.
           for (const returnOrigin of origins) {
-            out.push({
-              origin: departOrigin,
-              returnOrigin,
-              startDate,
-              nightsPerStop: nights,
-              legs: [...baseLegs, { origin: from, destination: returnOrigin, date: cursor }],
-            });
+            out.push({ origin: departOrigin, returnOrigin, startDate, nightsPerStop: nights, legs: [...legs, { origin: from, destination: returnOrigin, date: cursor }] });
           }
         } else {
-          out.push({
-            origin: departOrigin,
-            returnOrigin: null,
-            startDate,
-            nightsPerStop: nights,
-            legs: baseLegs,
-          });
+          out.push({ origin: departOrigin, returnOrigin: null, startDate, nightsPerStop: nights, legs });
         }
       }
     }
+    if (out.length > SKELETON_BUDGET * 2) { sampled = true; break; }
   }
-  return out;
+  return { skeletons: out, sampled, dateStepDays };
 }
 
 /** Unique leg/date searches needed to price a set of leg-bearing itineraries. */
@@ -177,12 +236,12 @@ export async function planTrip(
   options: PlanOptions = {},
 ): Promise<PlanResult> {
   const currency = spec.currency || 'USD';
-  const itineraries = enumerateItineraries(spec);
-  const maxIt = options.maxItineraries ?? 1000;
+  const { skeletons: itineraries, sampled, dateStepDays } = enumerateItineraries(spec);
+  const maxIt = options.maxItineraries ?? 20000;
   if (itineraries.length > maxIt) {
     throw new Error(
       `Too many itinerary combinations (${itineraries.length} > ${maxIt}). ` +
-        'Narrow the night ranges or reduce startFlexDays.',
+        'Narrow the night ranges, date window, or stops.',
     );
   }
 
@@ -237,6 +296,8 @@ export async function planTrip(
     allItineraries: results,
     legGrid,
     queriesRun: queries.length,
+    sampled,
+    dateStepDays,
   };
 }
 

@@ -72,6 +72,9 @@
   .fltimes .flarrow { color:var(--brand); margin:0 2px; }
   .flmeta { color:var(--muted); font-size:12px; margin-top:2px; }
   .flnum { color:var(--muted); font-weight:600; font-size:11.5px; }
+  .flbag { color:var(--muted); font-size:11px; margin-top:2px; }
+  .trip-bag { color:var(--muted); font-size:12.5px; margin-top:5px; }
+  .trip-bag b { color:var(--ink); }
 
   .pane { display:none; }
   .pane.act { display:block; }
@@ -239,13 +242,16 @@
       </div>
 
       <div class="row">
-        <div class="field"><label for="startDate">Start date</label><input id="startDate" type="date" value="2026-07-15" /></div>
-        <div class="field"><label for="startFlexDays">Start flex (days)</label><input id="startFlexDays" type="number" min="1" value="1" /></div>
+        <div class="field"><label for="startDate">Start date (earliest)</label><input id="startDate" type="date" value="2026-07-15" /></div>
+        <div class="field"><label for="endDate">End date (optional)</label><input id="endDate" type="date" /></div>
+      </div>
+      <div class="field"><label for="startFlexDays">Start flex (days)</label><input id="startFlexDays" type="number" min="1" value="1" />
+        <div class="hint">Set an <b>End date</b> to let stays run with no max — we'll find the best days to fly within the window. (Start flex is used only when there's no end date.)</div>
       </div>
       <div class="row-3">
         <div class="field"><label for="adults">Adults</label><input id="adults" type="number" min="1" value="1" /></div>
         <div class="field"><label for="cabin">Cabin</label>
-          <select id="cabin"><option>ECONOMY</option><option>PREMIUMECONOMY</option><option>BUSINESS</option><option>FIRST</option></select></div>
+          <select id="cabin"><option value="ECONOMY">Economy</option><option value="PREMIUMECONOMY">Premium Economy</option><option value="BUSINESS">Business</option><option value="FIRST">First</option></select></div>
         <div class="field"><label for="currency">Currency</label><input id="currency" value="USD" maxlength="3" /></div>
       </div>
 
@@ -271,6 +277,9 @@
         </select>
         <div class="hint" id="providerHint"></div>
       </div>
+
+      <div class="field"><label for="bags">Checked bags (total)</label><input id="bags" type="number" min="0" value="0" />
+        <div class="hint">We add an estimated baggage cost (per airline, per leg) under each trip's price.</div></div>
 
       <div id="keyWarn" style="margin-top:14px"></div>
       <button type="submit" id="run" class="btn btn-primary">Search flights</button>
@@ -318,9 +327,18 @@
       </div>
       <div class="field"><label for="a-totalNights">Total nights for the whole trip</label><input id="a-totalNights" type="number" min="1" value="12" /></div>
 
+      <div class="field">
+        <label for="a-month">No specific dates? Search a whole month</label>
+        <div class="inline" style="gap:8px">
+          <input type="month" id="a-month" style="flex:1" />
+          <button type="button" id="a-month-go" class="mini">Find best in month</button>
+        </div>
+        <div class="hint">We'll search the whole month and pick the best days based on your cities and minimum nights.</div>
+      </div>
+
       <div class="row-3">
         <div class="field"><label for="a-adults">Adults</label><input id="a-adults" type="number" min="1" value="1" /></div>
-        <div class="field"><label for="a-cabin">Cabin</label><select id="a-cabin"><option>ECONOMY</option><option>PREMIUMECONOMY</option><option>BUSINESS</option><option>FIRST</option></select></div>
+        <div class="field"><label for="a-cabin">Cabin</label><select id="a-cabin"><option value="ECONOMY">Economy</option><option value="PREMIUMECONOMY">Premium Economy</option><option value="BUSINESS">Business</option><option value="FIRST">First</option></select></div>
         <div class="field"><label for="a-currency">Currency</label><input id="a-currency" value="USD" maxlength="3" /></div>
       </div>
 
@@ -346,6 +364,9 @@
         </select>
         <div class="hint" id="a-providerHint"></div>
       </div>
+
+      <div class="field"><label for="a-bags">Checked bags (total)</label><input id="a-bags" type="number" min="0" value="0" />
+        <div class="hint">We add an estimated baggage cost (per airline, per leg) under each route's price.</div></div>
 
       <div id="a-keyWarn" style="margin-top:14px"></div>
       <button type="submit" id="a-run" class="btn btn-primary">Plan my trip</button>

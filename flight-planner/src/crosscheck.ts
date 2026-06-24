@@ -103,7 +103,7 @@ export async function compareLegPrices(
     currency,
     excludeAirlines: spec.excludeAirlines,
   };
-  const legs = uniqueLegQueries(enumerateItineraries(spec));
+  const legs = uniqueLegQueries(enumerateItineraries(spec).skeletons);
   const providerNames = providers.map((p) => p.name);
   const winCounts: Record<string, number> = Object.fromEntries(
     providerNames.map((n) => [n, 0]),

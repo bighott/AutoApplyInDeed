@@ -17,8 +17,8 @@ export interface TripStop {
   label?: string;
   /** Inclusive minimum nights to stay before flying onward. */
   minNights: number;
-  /** Inclusive maximum nights to stay before flying onward. */
-  maxNights: number;
+  /** Inclusive maximum nights; optional — bounded by the trip's end date when omitted. */
+  maxNights?: number;
 }
 
 export interface TripSpec {
@@ -35,6 +35,9 @@ export interface TripSpec {
   returnToOrigin: boolean;
   /** Earliest start date (ISO yyyy-mm-dd). */
   startDate: string;
+  /** Latest the trip may end (ISO yyyy-mm-dd). When set, the planner finds the
+   * best departure within [startDate, endDate] and lets stay lengths run up to it. */
+  endDate?: string;
   /** How many start days to try, beginning at startDate (1 = fixed start). */
   startFlexDays: number;
   adults: number;
@@ -134,4 +137,8 @@ export interface PlanResult {
   legGrid: PricedLeg[];
   /** Number of unique provider searches performed. */
   queriesRun: number;
+  /** True if combos/start dates were sampled to stay efficient. */
+  sampled?: boolean;
+  /** Largest start-date step used when sampling (1 = every day). */
+  dateStepDays?: number;
 }

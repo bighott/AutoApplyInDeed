@@ -24,6 +24,21 @@ const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','De
 function shortDate(d){ const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(d||'')); return m?`${MON[+m[2]-1]} ${+m[3]}`:String(d||''); }
 function rawTime(t){ const m=String(t==null?'':t).match(/(\d{1,2}:\d{2})/); return m?m[1]:''; }
 
+// ---- baggage estimate (per-airline first-checked-bag fee, USD) --------------
+const BAG_FEES={ WN:0, B6:35, AS:35, AA:40, DL:35, UA:40, NK:45, F9:45, HA:35, AC:35, WS:35,
+  BA:0, VS:0, AF:0, KL:0, LH:0, LX:0, IB:0, EI:0, TP:0, AY:0, SK:0, OS:0, SN:0,
+  EK:0, QR:0, EY:0, SV:0, SQ:0, CX:0, NH:0, JL:0, KE:0, QF:0, TK:0, FI:30, AZ:0 };
+const DEFAULT_BAG_FEE=40;
+function bagFee(code){ return code&&Object.prototype.hasOwnProperty.call(BAG_FEES,code)?BAG_FEES[code]:DEFAULT_BAG_FEE; }
+function bagEstimate(it, bags){ if(!bags||bags<=0) return 0; return bags*it.legs.reduce((s,l)=>s+(l.quote?bagFee(l.quote.airlineCode):DEFAULT_BAG_FEE),0); }
+function plannerBags(){ const v=$('bags'); return v?Math.max(0,Number(v.value)||0):0; }
+function advisorBags(){ const v=$('a-bags'); return v?Math.max(0,Number(v.value)||0):0; }
+function bagLine(it, bags, cur){
+  if(!bags||bags<=0) return '';
+  const b=bagEstimate(it,bags);
+  return `<div class="trip-bag">+ <b>${money(b,cur)}</b> bags (est., ${bags}×) · with bags <b>${money(it.total+b,cur)}</b></div>`;
+}
+
 // ---- autocomplete -----------------------------------------------------------
 async function fetchAirports(q){ try { const r=await fetch(`/api/airports?q=${encodeURIComponent(q)}&limit=8`); return r.ok?r.json():[]; } catch { return []; } }
 function attachAutocomplete(input, onSelect){
@@ -69,7 +84,7 @@ function addStop(code='',label='',min=2,max=3){
       <div class="field" style="margin-bottom:8px"><label>Label (auto-fills with city)</label><input class="s-label" aria-label="Stop label" value="${label}" /></div>
       <div class="field" style="margin-bottom:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
         <div><label>Min nights</label><input class="s-min" aria-label="Minimum nights" type="number" min="0" value="${min}" /></div>
-        <div><label>Max nights</label><input class="s-max" aria-label="Maximum nights" type="number" min="0" value="${max}" /></div></div></div>`;
+        <div><label>Max nights</label><input class="s-max" aria-label="Maximum nights" type="number" min="0" placeholder="any" value="${max}" /></div></div></div>`;
   el.querySelector('.xbtn').onclick=()=>{ if(document.querySelectorAll('#stops .stop').length>1) el.remove(); };
   $('stops').appendChild(el);
   const lab=el.querySelector('.s-label');
@@ -114,13 +129,13 @@ function qsv(el,sel){ const n=el.querySelector(sel); return n?n.value:''; }
 function readSpec(){
   const origins=[...document.querySelectorAll('.o-code')].map(i=>i.value.trim().toUpperCase()).filter(Boolean);
   if(!origins.length) throw new Error('Add at least one origin airport.');
-  const stops=[...document.querySelectorAll('#stops .stop')].map(el=>({
-    code: qsv(el,'.s-code').trim().toUpperCase(),
-    label: qsv(el,'.s-label').trim()||undefined,
-    minNights:Number(qsv(el,'.s-min')), maxNights:Number(qsv(el,'.s-max')),
-  }));
+  const stops=[...document.querySelectorAll('#stops .stop')].map(el=>{
+    const mx=qsv(el,'.s-max').trim();
+    return { code: qsv(el,'.s-code').trim().toUpperCase(), label: qsv(el,'.s-label').trim()||undefined,
+      minNights:Number(qsv(el,'.s-min')), maxNights: mx===''?undefined:Number(mx) };
+  });
   return { origin:origins[0], origins, stops, returnToOrigin:$('returnToOrigin').checked,
-    startDate:val('startDate'), startFlexDays:Number(val('startFlexDays')),
+    startDate:val('startDate'), endDate:val('endDate')||undefined, startFlexDays:Number(val('startFlexDays')),
     adults:Number(val('adults')), cabin:val('cabin'), currency:val('currency').trim().toUpperCase()||'USD',
     excludeAirlines:readExcl('excl-list') };
 }
@@ -233,7 +248,7 @@ function legRow(l){
       ${segsHtml(q)}
     </div>
     <div class="flmid">${times}<div class="flmeta">${meta||'&nbsp;'}</div></div>
-    <div class="flright"><div class="flprice">${money(q.price,q.currency)}</div>${book}</div>
+    <div class="flright"><div class="flprice">${money(q.price,q.currency)}</div><div class="flbag">+ ${money(bagFee(q.airlineCode),q.currency||'USD')}/bag</div>${book}</div>
   </div>`;
 }
 
@@ -263,7 +278,7 @@ function tripCard(it,rank,badges){
     <div class="trip-head">
       <div class="trip-rank">${rank}</div>
       <div class="trip-badges">${badgeHtml}</div>
-      <div class="trip-cost"><div class="trip-price">${money(it.total,cur)}</div><div class="trip-time">${fmtMins(it.totalDurationMinutes)} · from ${origins}</div></div>
+      <div class="trip-cost"><div class="trip-price">${money(it.total,cur)}</div><div class="trip-time">${fmtMins(it.totalDurationMinutes)} · from ${origins}</div>${bagLine(it,plannerBags(),cur)}</div>
     </div>
     <div class="trip-explain">${escapeHtml(explain(it))}</div>
     <div class="trip-legs">${it.legs.map(legRow).join('')}</div>
@@ -311,6 +326,7 @@ function render(){
   let html=`<div class="toolbar"><span class="lbl">Top 5 by</span><div class="seg">${seg('price','Cheapest')}${seg('time','Fastest')}${seg('value','Best value')}</div>`+
     `<button class="mini" id="csvBtn">⬇ Export CSV</button><button class="mini" id="saveBtn">★ Save</button>`+
     `<span class="lbl" style="margin-left:auto">${plan.allItineraries.length} options · ${plan.queriesRun} searches</span></div>`;
+  if(plan.sampled) html+=`<div class="banner warn">Wide window: I sampled start dates (every ${plan.dateStepDays||1} day${(plan.dateStepDays||1)===1?'':'s'}) and some stay lengths to stay fast. Set max nights or a tighter window for finer results.</div>`;
   html+=cards;
 
   // cross-check
@@ -433,7 +449,7 @@ function aTripCard(it,rank,badges){
     <div class="trip-head">
       <div class="trip-rank">${rank}</div>
       <div class="trip-badges">${badgeHtml}</div>
-      <div class="trip-cost"><div class="trip-price">${money(it.total,cur)}</div><div class="trip-time">${fmtMins(it.totalDurationMinutes)}</div></div>
+      <div class="trip-cost"><div class="trip-price">${money(it.total,cur)}</div><div class="trip-time">${fmtMins(it.totalDurationMinutes)}</div>${bagLine(it,advisorBags(),cur)}</div>
     </div>
     <div class="trip-route">${escapeHtml(aRoute(it))}</div>
     <div class="trip-explain">${escapeHtml(aexplain(it))}</div>
@@ -639,3 +655,15 @@ function wireExcl(pickId, addId, listId){ fillAirlineSelect(pickId);
   $(addId).onclick=add; $(pickId).onchange=add; }
 wireExcl('excl-pick','excl-add','excl-list');
 wireExcl('a-excl-pick','a-excl-add','a-excl-list');
+
+// --- baggage re-render + whole-month search ----------------------------------
+if($('bags')) $('bags').addEventListener('input', ()=>{ if(STATE&&STATE.plan) render(); });
+if($('a-bags')) $('a-bags').addEventListener('input', ()=>{ if(ASTATE&&ASTATE.result) renderAdvisor(); });
+if($('a-month-go')) $('a-month-go').onclick=()=>{
+  const m=$('a-month').value;
+  if(!m){ $('a-keyWarn').innerHTML='<div class="banner warn">Pick a month first.</div>'; return; }
+  const [y,mo]=m.split('-').map(Number);
+  $('a-startDate').value=`${m}-01`;
+  $('a-latestReturn').value=new Date(Date.UTC(y,mo,0)).toISOString().slice(0,10); // last day of month
+  if($('aform').requestSubmit) $('aform').requestSubmit(); else $('aform').dispatchEvent(new Event('submit',{cancelable:true}));
+};

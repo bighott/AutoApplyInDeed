@@ -129,23 +129,35 @@ function toSpec(raw: any): TripSpec {
     const code = String(s.code || '').trim().toUpperCase();
     if (!code) throw new Error(`Stop ${i + 1}: code is required`);
     const minNights = Number(s.minNights);
-    const maxNights = Number(s.maxNights);
-    if (!Number.isFinite(minNights) || !Number.isFinite(maxNights)) {
-      throw new Error(`Stop ${code}: nights must be numbers`);
+    if (!Number.isFinite(minNights) || minNights < 0) {
+      throw new Error(`Stop ${code}: min nights must be a number ≥ 0`);
     }
-    if (minNights < 0 || maxNights < minNights) {
-      throw new Error(`Stop ${code}: need 0 ≤ min ≤ max nights`);
+    // maxNights is optional now — left undefined unless a valid number is given.
+    let maxNights: number | undefined;
+    if (s.maxNights != null && String(s.maxNights).trim() !== '') {
+      maxNights = Number(s.maxNights);
+      if (!Number.isFinite(maxNights) || maxNights < minNights) {
+        throw new Error(`Stop ${code}: max nights must be ≥ min nights`);
+      }
     }
-    return {
-      code,
-      label: s.label ? String(s.label) : undefined,
-      minNights,
-      maxNights,
-    };
+    return { code, label: s.label ? String(s.label) : undefined, minNights, maxNights };
   });
   const startDate = String(raw.startDate || '').trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
     throw new Error('Start date must be yyyy-mm-dd');
+  }
+  let endDate: string | undefined;
+  if (raw.endDate && String(raw.endDate).trim()) {
+    endDate = String(raw.endDate).trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(endDate)) throw new Error('End date must be yyyy-mm-dd');
+    if (endDate < startDate) throw new Error('End date must be on or after the start date');
+    const windowDays = Math.round((Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) / 86_400_000);
+    const minTotal = stops.reduce((sum: number, s: any) => sum + s.minNights, 0);
+    if (minTotal > windowDays) {
+      throw new Error(`The minimum stay (${minTotal} nights) is longer than the date window (${windowDays} days). Extend the end date or lower minimum nights.`);
+    }
+  } else if (stops.some((s: any) => s.maxNights == null)) {
+    throw new Error('Set a max nights for each stop, or add an end date so we can bound the trip.');
   }
   const cabin = String(raw.cabin || 'ECONOMY').toUpperCase();
   const allowed = ['ECONOMY', 'PREMIUMECONOMY', 'BUSINESS', 'FIRST'];
@@ -157,6 +169,7 @@ function toSpec(raw: any): TripSpec {
     stops,
     returnToOrigin: raw.returnToOrigin !== false,
     startDate,
+    endDate,
     startFlexDays: Math.max(1, Number(raw.startFlexDays) || 1),
     adults: Math.max(1, Number(raw.adults) || 1),
     cabin: cabin as TripSpec['cabin'],
@@ -196,7 +209,7 @@ async function runPlan(spec: TripSpec, providerKind: string) {
   if (providerKind === 'crosscheck') {
     const serp = cachedSerp(requireEnv('SERPAPI_KEY'));
     // Enforce the budget on the SerpApi side before pricing (Expedia is free).
-    const legs = uniqueLegQueries(enumerateItineraries(spec));
+    const legs = uniqueLegQueries(enumerateItineraries(spec).skeletons);
     const opts = { adults: spec.adults, cabin: spec.cabin, currency: spec.currency || 'USD' };
     const billable = (serp as FlightProvider).countBillable?.(legs, opts) ?? legs.length;
     if (billable > MAX_SEARCHES) throw budgetError(billable, MAX_SEARCHES);
