@@ -15,8 +15,14 @@
 
 import type { FlightProvider } from './planner';
 import { legKey } from './planner';
-import type { FlightQuote, LegQuery } from './types';
+import { airlineCodesFromLabel } from './airlines';
+import type { FlightQuote, LegQuery, SearchOpts } from './types';
 import { googleFlightsUrl, minutesToLabel } from './util';
+
+const MOCK_AIRLINES: Array<[string, string]> = [
+  ['AA', 'American'], ['DL', 'Delta'], ['UA', 'United'],
+  ['BA', 'British Airways'], ['AF', 'Air France'], ['LH', 'Lufthansa'],
+];
 
 // --- deterministic mock (offline) --------------------------------------------
 
@@ -27,10 +33,7 @@ function hash(s: string): number {
 }
 
 export class MockFlightProvider implements FlightProvider {
-  async searchCheapest(
-    q: LegQuery,
-    opts: { adults: number; cabin: string; currency?: string },
-  ): Promise<FlightQuote | null> {
+  async searchCheapest(q: LegQuery, opts: SearchOpts): Promise<FlightQuote | null> {
     const routeBase = 80 + (hash(q.origin + q.destination) % 420);
     // Per-date variation makes some days cheaper — that's what the planner hunts.
     const dateVar = (hash(q.date) % 7) * 22;
@@ -46,15 +49,31 @@ export class MockFlightProvider implements FlightProvider {
     const stops = dateVar > 90 ? 1 : 0;
     // Duration varies by route + date so "fastest" and "cheapest" can differ.
     const durationMinutes = 300 + (hash(q.origin + q.destination) % 360) + stops * 120 + (hash(q.date) % 50);
+
+    // Pick a real-ish airline (deterministic); skip any the user excluded.
+    const exclude = new Set((opts.excludeAirlines ?? []).map((c) => c.toUpperCase()));
+    let idx = hash(q.origin + q.destination + 'air') % MOCK_AIRLINES.length;
+    for (let n = 0; n < MOCK_AIRLINES.length && exclude.has(MOCK_AIRLINES[idx][0]); n++) {
+      idx = (idx + 1) % MOCK_AIRLINES.length;
+    }
+    if (exclude.has(MOCK_AIRLINES[idx][0])) return null; // every airline excluded
+    const [code, name] = MOCK_AIRLINES[idx];
+    const flightNumber = `${code}${100 + (hash(q.date + code) % 899)}`;
+    const departMin = 480 + (hash(q.date) % 720); // 08:00–20:00 ish
+    const arriveMin = (departMin + durationMinutes) % 1440;
+    const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
     return {
       price,
       currency: opts.currency || 'USD',
-      airline: 'MockAir',
+      airline: name,
+      airlineCode: code,
+      flightNumber,
       stops,
       durationMinutes,
       durationLabel: minutesToLabel(durationMinutes),
-      departTime: '09:00',
-      arriveTime: '17:00',
+      departTime: hhmm(departMin),
+      arriveTime: hhmm(arriveMin),
       seatsLeft: 9,
       bookingLabel: `${q.origin}->${q.destination} ${q.date}`,
       bookingUrl: googleFlightsUrl(q.origin, q.destination, q.date),
@@ -75,8 +94,15 @@ export class StaticFlightProvider implements FlightProvider {
     return new StaticFlightProvider(map);
   }
 
-  async searchCheapest(q: LegQuery): Promise<FlightQuote | null> {
-    return this.quotes.get(legKey(q)) ?? null;
+  async searchCheapest(q: LegQuery, opts?: SearchOpts): Promise<FlightQuote | null> {
+    const quote = this.quotes.get(legKey(q)) ?? null;
+    if (!quote) return null;
+    const exclude = opts?.excludeAirlines;
+    if (exclude?.length) {
+      const codes = airlineCodesFromLabel(quote.airline);
+      if (codes.some((c) => exclude.includes(c))) return null;
+    }
+    return quote;
   }
 }
 

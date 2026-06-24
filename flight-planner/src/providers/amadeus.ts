@@ -8,7 +8,7 @@
  */
 
 import type { FlightProvider } from '../planner';
-import type { FlightQuote, LegQuery } from '../types';
+import type { FlightQuote, LegQuery, SearchOpts } from '../types';
 import { googleFlightsUrl, minutesToLabel } from '../util';
 
 const CABIN: Record<string, string> = {
@@ -65,10 +65,7 @@ export class AmadeusProvider implements FlightProvider {
     return this.token;
   }
 
-  async searchCheapest(
-    q: LegQuery,
-    opts: { adults: number; cabin: string; currency?: string },
-  ): Promise<FlightQuote | null> {
+  async searchCheapest(q: LegQuery, opts: SearchOpts): Promise<FlightQuote | null> {
     const token = await this.authToken();
     const url = new URL(`${this.host}/v2/shopping/flight-offers`);
     url.searchParams.set('originLocationCode', q.origin);
@@ -77,6 +74,9 @@ export class AmadeusProvider implements FlightProvider {
     url.searchParams.set('adults', String(opts.adults));
     url.searchParams.set('travelClass', CABIN[opts.cabin] ?? 'ECONOMY');
     url.searchParams.set('currencyCode', (opts.currency ?? 'USD').toUpperCase());
+    if (opts.excludeAirlines?.length) {
+      url.searchParams.set('excludedAirlineCodes', opts.excludeAirlines.join(','));
+    }
     url.searchParams.set('max', '1');
 
     const res = await this.fetchImpl(url, { headers: { authorization: `Bearer ${token}` } });
@@ -94,6 +94,7 @@ export class AmadeusProvider implements FlightProvider {
       currency: offer.price?.currency ?? (opts.currency ?? 'USD').toUpperCase(),
       airline: code,
       airlineCode: code && /^[A-Z0-9]{2}$/.test(code) ? code : undefined,
+      flightNumber: segs[0]?.number ? `${segs[0].carrierCode}${segs[0].number}` : undefined,
       stops: Math.max(0, segs.length - 1),
       durationMinutes: mins,
       durationLabel: minutesToLabel(mins),

@@ -45,6 +45,8 @@ export interface AdvisorSpec {
   returnToOrigin: boolean;
   /** Prune geographically inefficient city orders before pricing (default true). */
   optimizeGeography?: boolean;
+  /** IATA airline codes to exclude from results (optional). */
+  excludeAirlines?: string[];
   adults: number;
   cabin: string;
   currency?: string;
@@ -329,7 +331,12 @@ export async function planAdvisor(
     options.maxRoutes ?? 80000,
   );
   const queries = uniqueLegQueries(skeletons);
-  const searchOpts = { adults: spec.adults, cabin: spec.cabin, currency };
+  const searchOpts = {
+    adults: spec.adults,
+    cabin: spec.cabin,
+    currency,
+    excludeAirlines: spec.excludeAirlines,
+  };
   const maxSearches = options.maxSearches ?? Infinity;
   const billable = provider.countBillable?.(queries, searchOpts) ?? queries.length;
   if (billable > maxSearches) throw budgetError(billable, maxSearches);

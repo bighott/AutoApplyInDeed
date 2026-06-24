@@ -10,14 +10,12 @@
  */
 
 import { legKey, type FlightProvider } from './planner';
-import type { FlightQuote, LegQuery } from './types';
+import type { FlightQuote, LegQuery, SearchOpts } from './types';
 
 interface Entry {
   quote: FlightQuote | null;
   expires: number;
 }
-
-type SearchOpts = { adults: number; cabin: string; currency?: string };
 
 export class CachingProvider implements FlightProvider {
   constructor(
@@ -31,7 +29,8 @@ export class CachingProvider implements FlightProvider {
   }
 
   private key(q: LegQuery, o: SearchOpts): string {
-    return `${this.opts.namespace}|${legKey(q)}|${o.cabin}|${o.adults}|${o.currency || 'USD'}`;
+    const excl = (o.excludeAirlines ?? []).slice().sort().join('.');
+    return `${this.opts.namespace}|${legKey(q)}|${o.cabin}|${o.adults}|${o.currency || 'USD'}|${excl}`;
   }
 
   /** How many of these legs are NOT already cached fresh — i.e. would be billed. */

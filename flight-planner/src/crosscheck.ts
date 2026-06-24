@@ -15,7 +15,7 @@ import {
   uniqueLegQueries,
   type FlightProvider,
 } from './planner';
-import type { FlightQuote, LegQuery, TripSpec } from './types';
+import type { FlightQuote, LegQuery, SearchOpts, TripSpec } from './types';
 
 export interface NamedProvider {
   name: string;
@@ -37,7 +37,7 @@ export class CheapestOfProvider implements FlightProvider {
   /** Billed calls = sum of each sub-provider's billable count (free ones report none). */
   countBillable(
     queries: LegQuery[],
-    opts: { adults: number; cabin: string; currency?: string },
+    opts: SearchOpts,
   ): number {
     return this.providers.reduce(
       (sum, { provider }) => sum + (provider.countBillable?.(queries, opts) ?? 0),
@@ -47,7 +47,7 @@ export class CheapestOfProvider implements FlightProvider {
 
   async searchCheapest(
     q: LegQuery,
-    opts: { adults: number; cabin: string; currency?: string },
+    opts: SearchOpts,
   ): Promise<FlightQuote | null> {
     const quotes = await Promise.all(
       this.providers.map(async ({ name, provider }) => {
@@ -97,7 +97,12 @@ export async function compareLegPrices(
   providers: NamedProvider[],
 ): Promise<ComparisonReport> {
   const currency = spec.currency || 'USD';
-  const opts = { adults: spec.adults, cabin: spec.cabin, currency };
+  const opts: SearchOpts = {
+    adults: spec.adults,
+    cabin: spec.cabin,
+    currency,
+    excludeAirlines: spec.excludeAirlines,
+  };
   const legs = uniqueLegQueries(enumerateItineraries(spec));
   const providerNames = providers.map((p) => p.name);
   const winCounts: Record<string, number> = Object.fromEntries(

@@ -10,25 +10,20 @@ import type {
   LegQuery,
   PlanResult,
   PricedLeg,
+  SearchOpts,
   TripSpec,
   TripStop,
 } from './types';
 
 export interface FlightProvider {
   /** Cheapest bookable quote for one leg/date, or null if none found. */
-  searchCheapest(
-    query: LegQuery,
-    opts: { adults: number; cabin: string; currency?: string },
-  ): Promise<FlightQuote | null>;
+  searchCheapest(query: LegQuery, opts: SearchOpts): Promise<FlightQuote | null>;
   /**
    * Optional: how many of these legs would actually cost a billed API call
    * (i.e. are not already cached). Lets the budget cap count real spend, not
    * gross leg count. Providers without it are treated as "all billable".
    */
-  countBillable?(
-    queries: LegQuery[],
-    opts: { adults: number; cabin: string; currency?: string },
-  ): number;
+  countBillable?(queries: LegQuery[], opts: SearchOpts): number;
 }
 
 /** Add `n` days to an ISO yyyy-mm-dd date (UTC, DST-safe). */
@@ -133,7 +128,7 @@ export function uniqueLegQueries(itineraries: Array<{ legs: LegQuery[] }>): LegQ
 export async function priceWithLimit(
   provider: FlightProvider,
   queries: LegQuery[],
-  opts: { adults: number; cabin: string; currency?: string },
+  opts: SearchOpts,
   concurrency: number,
 ): Promise<Map<string, FlightQuote | null>> {
   const results = new Map<string, FlightQuote | null>();
@@ -192,7 +187,12 @@ export async function planTrip(
   }
 
   const queries = uniqueLegQueries(itineraries);
-  const searchOpts = { adults: spec.adults, cabin: spec.cabin, currency };
+  const searchOpts: SearchOpts = {
+    adults: spec.adults,
+    cabin: spec.cabin,
+    currency,
+    excludeAirlines: spec.excludeAirlines,
+  };
   const maxSearches = options.maxSearches ?? Infinity;
   const billable = provider.countBillable?.(queries, searchOpts) ?? queries.length;
   if (billable > maxSearches) throw budgetError(billable, maxSearches);

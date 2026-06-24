@@ -99,6 +99,17 @@ function readBody(req: import('node:http').IncomingMessage): Promise<string> {
   });
 }
 
+/** Parse an optional list of 2-char IATA airline codes to exclude. */
+function parseExclude(raw: any): string[] | undefined {
+  const a: any[] = Array.isArray(raw.excludeAirlines) ? raw.excludeAirlines : [];
+  const codes = [
+    ...new Set(
+      a.map((c) => String(c).trim().toUpperCase()).filter((c) => /^[A-Z0-9]{2}$/.test(c)),
+    ),
+  ];
+  return codes.length ? codes : undefined;
+}
+
 /** Validate + coerce the posted spec into a TripSpec, throwing on bad input. */
 function toSpec(raw: any): TripSpec {
   if (!raw || typeof raw !== 'object') throw new Error('Missing trip spec');
@@ -150,6 +161,7 @@ function toSpec(raw: any): TripSpec {
     adults: Math.max(1, Number(raw.adults) || 1),
     cabin: cabin as TripSpec['cabin'],
     currency: raw.currency ? String(raw.currency).toUpperCase() : 'USD',
+    excludeAirlines: parseExclude(raw),
   };
 }
 
@@ -269,6 +281,7 @@ function toAdvisorSpec(raw: any): AdvisorSpec {
     totalNights,
     returnToOrigin: raw.returnToOrigin !== false,
     optimizeGeography: raw.optimizeGeography !== false,
+    excludeAirlines: parseExclude(raw),
     adults: Math.max(1, Number(raw.adults) || 1),
     cabin,
     currency: raw.currency ? String(raw.currency).toUpperCase() : 'USD',

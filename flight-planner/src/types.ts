@@ -40,6 +40,8 @@ export interface TripSpec {
   adults: number;
   cabin: CabinClass;
   currency?: string;
+  /** IATA airline codes to exclude from results (optional). */
+  excludeAirlines?: string[];
 }
 
 /** A single origin→destination search on a specific date. */
@@ -50,6 +52,15 @@ export interface LegQuery {
   date: string;
 }
 
+/** Options passed to a provider for a single leg search. */
+export interface SearchOpts {
+  adults: number;
+  cabin: string;
+  currency?: string;
+  /** IATA airline codes to exclude from results. */
+  excludeAirlines?: string[];
+}
+
 /** The cheapest quote a provider returned for one leg/date. */
 export interface FlightQuote {
   price: number;
@@ -57,6 +68,8 @@ export interface FlightQuote {
   airline?: string;
   /** 2-letter IATA airline code, when known (for logo lookup). */
   airlineCode?: string;
+  /** Primary marketing flight number, e.g. "FI618". */
+  flightNumber?: string;
   /** Direct airline logo URL, when the source provides one. */
   airlineLogo?: string;
   stops?: number;

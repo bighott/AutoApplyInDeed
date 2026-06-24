@@ -15,7 +15,8 @@
  */
 
 import type { FlightProvider } from '../planner';
-import type { FlightQuote, LegQuery } from '../types';
+import { codeForAirlineName } from '../airlines';
+import type { FlightQuote, LegQuery, SearchOpts } from '../types';
 import { googleFlightsUrl, minutesToLabel } from '../util';
 
 /** Map our CabinClass to SerpApi `travel_class` (1=econ,2=prem,3=biz,4=first). */
@@ -60,10 +61,7 @@ export class SerpApiGoogleFlightsProvider implements FlightProvider {
     this.fetchImpl = opts.fetchImpl ?? fetch;
   }
 
-  async searchCheapest(
-    q: LegQuery,
-    opts: { adults: number; cabin: string; currency?: string },
-  ): Promise<FlightQuote | null> {
+  async searchCheapest(q: LegQuery, opts: SearchOpts): Promise<FlightQuote | null> {
     const currency = opts.currency ?? 'USD';
     const url = new URL(this.endpoint);
     url.searchParams.set('engine', 'google_flights');
@@ -86,9 +84,16 @@ export class SerpApiGoogleFlightsProvider implements FlightProvider {
     };
     if (data.error) return null;
 
-    const all = [...(data.best_flights ?? []), ...(data.other_flights ?? [])].filter(
-      (o) => typeof o.price === 'number',
-    );
+    const exclude = new Set((opts.excludeAirlines ?? []).map((c) => c.toUpperCase()));
+    const optionExcluded = (o: SerpFlightOption): boolean =>
+      (o.flights ?? []).some((s) => {
+        const code = (s.flight_number?.trim().slice(0, 2) || codeForAirlineName(s.airline) || '').toUpperCase();
+        return code && exclude.has(code);
+      });
+
+    const all = [...(data.best_flights ?? []), ...(data.other_flights ?? [])]
+      .filter((o) => typeof o.price === 'number')
+      .filter((o) => !exclude.size || !optionExcluded(o));
     if (all.length === 0) return null;
     all.sort((a, b) => (a.price as number) - (b.price as number));
 
@@ -103,6 +108,7 @@ export class SerpApiGoogleFlightsProvider implements FlightProvider {
       currency,
       airline: airlines.join(', ') || undefined,
       airlineCode: code && /^[A-Z0-9]{2}$/.test(code) ? code : undefined,
+      flightNumber: segs[0]?.flight_number?.replace(/\s+/g, '') || undefined,
       airlineLogo: best.airline_logo || segs[0]?.airline_logo || undefined,
       stops: Math.max(0, segs.length - 1),
       durationMinutes: best.total_duration,

@@ -13,6 +13,17 @@ function applyTheme(t){
 applyTheme((()=>{ try { return localStorage.getItem('pmf_theme')||'light'; } catch { return 'light'; } })());
 $('themeBtn').onclick=()=>applyTheme(document.documentElement.dataset.theme==='dark'?'light':'dark');
 
+// ---- time zone --------------------------------------------------------------
+let TZ=(()=>{ try { return localStorage.getItem('pmf_tz')||'local'; } catch { return 'local'; } })();
+const TZ_OPTIONS=[['local','Airport local time'],['UTC','UTC'],['America/New_York','New York (ET)'],['America/Chicago','Chicago (CT)'],['America/Denver','Denver (MT)'],['America/Los_Angeles','Los Angeles (PT)'],['America/Anchorage','Anchorage'],['Pacific/Honolulu','Honolulu'],['Europe/London','London'],['Europe/Paris','Paris'],['Europe/Berlin','Berlin'],['Europe/Athens','Athens'],['Asia/Dubai','Dubai'],['Asia/Kolkata','India'],['Asia/Singapore','Singapore'],['Asia/Tokyo','Tokyo'],['Australia/Sydney','Sydney']];
+$('tzSelect').innerHTML=TZ_OPTIONS.map(([v,l])=>`<option value="${v}">${l}</option>`).join('');
+$('tzSelect').value=TZ;
+$('tzSelect').onchange=()=>{ TZ=$('tzSelect').value; try { localStorage.setItem('pmf_tz',TZ); } catch {}
+  if(STATE&&STATE.plan) render(); if(ASTATE&&ASTATE.result) renderAdvisor(); };
+const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function shortDate(d){ const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(d||'')); return m?`${MON[+m[2]-1]} ${+m[3]}`:String(d||''); }
+function rawTime(t){ const m=String(t==null?'':t).match(/(\d{1,2}:\d{2})/); return m?m[1]:''; }
+
 // ---- autocomplete -----------------------------------------------------------
 async function fetchAirports(q){ try { const r=await fetch(`/api/airports?q=${encodeURIComponent(q)}&limit=8`); return r.ok?r.json():[]; } catch { return []; } }
 function attachAutocomplete(input, onSelect){
@@ -110,7 +121,8 @@ function readSpec(){
   }));
   return { origin:origins[0], origins, stops, returnToOrigin:$('returnToOrigin').checked,
     startDate:val('startDate'), startFlexDays:Number(val('startFlexDays')),
-    adults:Number(val('adults')), cabin:val('cabin'), currency:val('currency').trim().toUpperCase()||'USD' };
+    adults:Number(val('adults')), cabin:val('cabin'), currency:val('currency').trim().toUpperCase()||'USD',
+    excludeAirlines:readExcl('excl-list') };
 }
 $('form').onsubmit=async(e)=>{
   e.preventDefault(); const btn=$('run'); btn.disabled=true; btn.textContent='Searching…';
@@ -185,7 +197,15 @@ function wireLogoFallbacks(root){
     if(img.complete && img.naturalWidth===0) swap();
   });
 }
-function fmtTime(t){ const m=String(t==null?'':t).match(/(\d{1,2}:\d{2})/); return m?m[1]:''; }
+function fmtTime(t){
+  if(t==null||t==='') return '';
+  const s=String(t);
+  if(TZ&&TZ!=='local'&&/\d{4}-\d{2}-\d{2}[T ]\d/.test(s)){
+    const d=new Date(s.replace(' ','T'));
+    if(!isNaN(d.getTime())){ try { return new Intl.DateTimeFormat('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:TZ}).format(d); } catch {} }
+  }
+  const m=s.match(/(\d{1,2}:\d{2})/); return m?m[1]:'';
+}
 function segsHtml(q){
   const s=q.segments; if(!s||s.length<2) return '';
   const chain=[s[0].from, ...s.map(x=>x.to)].filter(Boolean);
@@ -197,16 +217,22 @@ function segsHtml(q){
 
 function legRow(l){
   if(!l.quote) return `<div class="flrow"><div class="flmono" style="background:#aab6c6">✈</div>
-    <div><div class="flair">No flight found</div><div class="flsub">${l.origin} → ${l.destination} · ${l.date}</div></div>
+    <div><div class="flair">No flight found</div><div class="flsub">${l.origin} → ${l.destination} · ${shortDate(l.date)}</div></div>
     <div class="flmid">—</div><div class="flright"><div class="flprice soldout">—</div></div></div>`;
   const q=l.quote;
-  const times=(fmtTime(q.departTime)&&fmtTime(q.arriveTime))?`${fmtTime(q.departTime)} – ${fmtTime(q.arriveTime)}`:l.date;
+  const dep=fmtTime(q.departTime), arr=fmtTime(q.arriveTime);
+  const times=(dep&&arr)?`<div class="fltimes">${dep}<span class="flarrow">→</span>${arr}</div>`:'';
   const stops=q.stops===0?'Nonstop':(q.stops!=null?`${q.stops} stop${q.stops===1?'':'s'}`:'');
+  const meta=[stops, q.durationLabel].filter(Boolean).join(' · ');
   const book=q.bookingUrl?`<a class="flbook" href="${q.bookingUrl}" target="_blank" rel="noopener">Select</a>`:'';
   return `<div class="flrow">
     ${airlineLogoHtml(q)}
-    <div class="flinfo"><div class="flair">${escapeHtml(q.airline||'Flight')}</div><div class="flsub">${l.origin} → ${l.destination} · ${times}${q.seatsLeft===0?' · <span class="soldout">sold out at this fare</span>':''}</div>${segsHtml(q)}</div>
-    <div class="flmid">${stops?`<span class="flbadge${q.stops===0?' nonstop':''}">${stops}</span>`:''}<div class="fldur">${q.durationLabel||''}</div></div>
+    <div class="flinfo">
+      <div class="flair">${escapeHtml(q.airline||'Flight')}${q.flightNumber?` <span class="flnum">${escapeHtml(q.flightNumber)}</span>`:''}</div>
+      <div class="flsub">${l.origin} → ${l.destination} · ${shortDate(l.date)}${q.seatsLeft===0?' · <span class="soldout">sold out at this fare</span>':''}</div>
+      ${segsHtml(q)}
+    </div>
+    <div class="flmid">${times}<div class="flmeta">${meta||'&nbsp;'}</div></div>
     <div class="flright"><div class="flprice">${money(q.price,q.currency)}</div>${book}</div>
   </div>`;
 }
@@ -379,7 +405,7 @@ function readAdvisorSpec(){
   if(!destinations.length) throw new Error('Add at least one place to visit.');
   return { origins, destinations, startDate:val('a-startDate'), latestReturn:val('a-latestReturn')||undefined,
     totalNights:Number(val('a-totalNights')), returnToOrigin:$('a-returnToOrigin').checked,
-    optimizeGeography:$('a-optimizeGeography').checked,
+    optimizeGeography:$('a-optimizeGeography').checked, excludeAirlines:readExcl('a-excl-list'),
     adults:Number(val('a-adults')), cabin:val('a-cabin'), currency:val('a-currency').trim().toUpperCase()||'USD' };
 }
 
@@ -469,11 +495,12 @@ function downloadFile(name, text, mime){
 function pathLabel(it){ return [...it.legs.map(l=>l.origin), it.legs[it.legs.length-1].destination].join(' → '); }
 
 function legsToCsvRows(itins, routeLabelFn){
-  const header=['Option','Route','From','To','Date','Airline','Stops','Duration','Price','Currency','Book'];
+  const header=['Option','Route','From','To','Date','Depart','Arrive','Airline','Flight','Stops','Duration','Price','Currency','Book'];
   const rows=[header];
   itins.forEach((it,i)=>{
     it.legs.forEach(l=>{ const q=l.quote||{};
-      rows.push([i+1, routeLabelFn(it), l.origin, l.destination, l.date, q.airline||'', q.stops==null?'':q.stops, q.durationLabel||'', q.price==null?'':q.price, q.currency||'', q.bookingUrl||'']);
+      rows.push([i+1, routeLabelFn(it), l.origin, l.destination, l.date, rawTime(q.departTime), rawTime(q.arriveTime),
+        q.airline||'', q.flightNumber||'', q.stops==null?'':q.stops, q.durationLabel||'', q.price==null?'':q.price, q.currency||'', q.bookingUrl||'']);
     });
   });
   return rows.map(r=>r.map(csvCell).join(',')).join('\r\n');
@@ -546,18 +573,21 @@ function importCsvText(text, fileName){
   const rows=parseCsv(text); if(rows.length<2) throw new Error('CSV looks empty.');
   const head=rows[0].map(h=>h.trim().toLowerCase());
   const ix=name=>head.indexOf(name);
-  const iOpt=ix('option'), iFrom=ix('from'), iTo=ix('to'), iDate=ix('date'), iAir=ix('airline'),
-        iStops=ix('stops'), iDur=ix('duration'), iPrice=ix('price'), iCur=ix('currency'), iBook=ix('book');
+  const iOpt=ix('option'), iFrom=ix('from'), iTo=ix('to'), iDate=ix('date'), iDep=ix('depart'), iArr=ix('arrive'),
+        iAir=ix('airline'), iFlt=ix('flight'), iStops=ix('stops'), iDur=ix('duration'), iPrice=ix('price'), iCur=ix('currency'), iBook=ix('book');
   if(iFrom<0||iTo<0||iPrice<0) throw new Error('Need at least From, To and Price columns.');
+  const cell=(row,i)=>i>=0?(row[i]||''):'';
   const groups=new Map();
   for(let r=1;r<rows.length;r++){ const row=rows[r]; if(!row[iFrom]) continue;
     const opt=iOpt>=0?(row[iOpt]||'1'):'1';
     if(!groups.has(opt)) groups.set(opt,[]);
-    const dur=iDur>=0?row[iDur]:'';
-    groups.get(opt).push({ origin:(row[iFrom]||'').trim().toUpperCase(), destination:(row[iTo]||'').trim().toUpperCase(), date:(iDate>=0?row[iDate]:'').trim(),
-      quote:{ price:Number(String(row[iPrice]).replace(/[^0-9.]/g,''))||0, currency:(iCur>=0&&row[iCur]?row[iCur]:'USD').trim().toUpperCase(),
-        airline:iAir>=0?row[iAir]:'', stops:(iStops>=0&&row[iStops]!=='')?Number(row[iStops]):undefined,
-        durationLabel:dur, durationMinutes:parseDurLabel(dur), bookingUrl:iBook>=0?row[iBook]:'' } });
+    const dur=cell(row,iDur);
+    groups.get(opt).push({ origin:cell(row,iFrom).trim().toUpperCase(), destination:cell(row,iTo).trim().toUpperCase(), date:cell(row,iDate).trim(),
+      quote:{ price:Number(String(row[iPrice]).replace(/[^0-9.]/g,''))||0, currency:(cell(row,iCur)||'USD').trim().toUpperCase(),
+        airline:cell(row,iAir), flightNumber:cell(row,iFlt).trim()||undefined,
+        departTime:cell(row,iDep).trim()||undefined, arriveTime:cell(row,iArr).trim()||undefined,
+        stops:(iStops>=0&&row[iStops]!=='')?Number(row[iStops]):undefined,
+        durationLabel:dur, durationMinutes:parseDurLabel(dur), bookingUrl:cell(row,iBook) } });
   }
   if(!groups.size) throw new Error('No flight rows found.');
   const itins=[...groups.values()].map(legs=>{
@@ -596,3 +626,16 @@ $('csvUpload').onchange=(e)=>{
   rd.onerror=()=>{ $('importMsg').textContent='Could not read the file.'; };
   rd.readAsText(f); e.target.value='';
 };
+
+// --- avoid-airlines picker ---------------------------------------------------
+const AIRLINE_OPTS=(()=>{ const seen=new Set(),out=[]; for(const [name,code] of Object.entries(AIRLINE_IATA)){ if(seen.has(code))continue; seen.add(code); out.push({code,name}); } return out.sort((a,b)=>a.name.localeCompare(b.name)); })();
+function fillAirlineSelect(id){ $(id).innerHTML=`<option value="">Add an airline to avoid…</option>`+AIRLINE_OPTS.map(a=>`<option value="${a.code}">${escapeHtml(a.name)} (${a.code})</option>`).join(''); }
+function readExcl(listId){ return [...$(listId).querySelectorAll('[data-code]')].map(c=>c.dataset.code); }
+function addExclChip(listId, code, name){ const list=$(listId); if([...list.querySelectorAll('[data-code]')].some(c=>c.dataset.code===code)) return;
+  const el=document.createElement('span'); el.className='chip'; el.dataset.code=code;
+  el.innerHTML=`${escapeHtml(name)} <button type="button" aria-label="Remove">×</button>`; el.querySelector('button').onclick=()=>el.remove(); list.appendChild(el); }
+function wireExcl(pickId, addId, listId){ fillAirlineSelect(pickId);
+  const add=()=>{ const sel=$(pickId), code=sel.value; if(!code) return; const name=sel.options[sel.selectedIndex].text.replace(/\s*\([A-Z0-9]{2}\)\s*$/,''); addExclChip(listId, code, name); sel.value=''; };
+  $(addId).onclick=add; $(pickId).onchange=add; }
+wireExcl('excl-pick','excl-add','excl-list');
+wireExcl('a-excl-pick','a-excl-add','a-excl-list');

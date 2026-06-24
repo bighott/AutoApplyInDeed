@@ -9,7 +9,7 @@
  */
 
 import type { FlightProvider } from '../planner';
-import type { FlightQuote, LegQuery } from '../types';
+import type { FlightQuote, LegQuery, SearchOpts } from '../types';
 import { googleFlightsUrl, minutesToLabel } from '../util';
 
 export interface TravelpayoutsOptions {
@@ -40,10 +40,7 @@ export class TravelpayoutsProvider implements FlightProvider {
     this.fetchImpl = opts.fetchImpl ?? fetch;
   }
 
-  async searchCheapest(
-    q: LegQuery,
-    opts: { adults: number; cabin: string; currency?: string },
-  ): Promise<FlightQuote | null> {
+  async searchCheapest(q: LegQuery, opts: SearchOpts): Promise<FlightQuote | null> {
     const currency = (opts.currency ?? 'USD').toUpperCase();
     // Exact-date first; if the cache has nothing, retry at month level and keep
     // only entries that actually depart on the requested date.
@@ -53,6 +50,10 @@ export class TravelpayoutsProvider implements FlightProvider {
       items = month.filter(
         (f) => typeof f.departure_at === 'string' && f.departure_at.slice(0, 10) === q.date,
       );
+    }
+    const exclude = new Set((opts.excludeAirlines ?? []).map((c) => c.toUpperCase()));
+    if (exclude.size) {
+      items = items.filter((f) => !(typeof f.airline === 'string' && exclude.has(f.airline.toUpperCase())));
     }
     if (!items.length) return null;
     items.sort((a, b) => (Number(a.price) || 1e9) - (Number(b.price) || 1e9));
@@ -71,6 +72,7 @@ export class TravelpayoutsProvider implements FlightProvider {
       currency,
       airline: code,
       airlineCode: code && /^[A-Z0-9]{2}$/.test(code) ? code : undefined,
+      flightNumber: code && f.flight_number ? `${code}${f.flight_number}` : undefined,
       stops: typeof f.transfers === 'number' ? f.transfers : undefined,
       durationMinutes: dur,
       durationLabel: minutesToLabel(dur),
@@ -97,7 +99,7 @@ export class TravelpayoutsProvider implements FlightProvider {
     url.searchParams.set('one_way', 'true');
     url.searchParams.set('currency', currency.toLowerCase());
     url.searchParams.set('sorting', 'price');
-    url.searchParams.set('limit', departureAt.length > 7 ? '1' : '30');
+    url.searchParams.set('limit', '30');
     url.searchParams.set('token', this.token);
     const res = await this.fetchImpl(url, { headers: { 'x-access-token': this.token } });
     if (!res.ok) return [];
