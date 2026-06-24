@@ -38,10 +38,13 @@ export interface AdvisorSpec {
   destinations: AdvisorDestination[];
   /** Earliest possible departure (ISO yyyy-mm-dd). */
   startDate: string;
-  /** Latest possible return (ISO). If set and later than startDate+totalNights, the trip slides within the window. */
-  latestReturn?: string;
-  /** Total nights for the whole trip. */
-  totalNights: number;
+  /** Latest possible return (ISO). The trip slides within [startDate, endDate]. */
+  endDate?: string;
+  /**
+   * Total nights for the whole trip (DATES mode). Omit for MONTH/window mode,
+   * where stay lengths come from each city's min/max within [startDate, endDate].
+   */
+  totalNights?: number;
   returnToOrigin: boolean;
   /** Prune geographically inefficient city orders before pricing (default true). */
   optimizeGeography?: boolean;
@@ -177,6 +180,53 @@ function daysBetween(a: string, b: string): number {
   );
 }
 
+/** Count night-combos of [min_i, max_i] with sum ≤ cap (DP) — for window mode. */
+function countRangeCombos(mins: number[], maxs: number[], cap: number): number {
+  const k = mins.length;
+  const minSuf = new Array(k + 1).fill(0);
+  for (let i = k - 1; i >= 0; i--) minSuf[i] = minSuf[i + 1] + mins[i];
+  const memo = new Map<number, number>();
+  const rec = (i: number, used: number): number => {
+    if (i === k) return 1;
+    const key = i * 1_000_003 + used;
+    const c = memo.get(key);
+    if (c !== undefined) return c;
+    const hi = Math.min(maxs[i], cap - used - minSuf[i + 1]);
+    let tot = 0;
+    for (let n = mins[i]; n <= hi; n++) tot += rec(i + 1, used + n);
+    memo.set(key, tot);
+    return tot;
+  };
+  return rec(0, 0);
+}
+
+/** Night-combos with sum ≤ cap, evenly sampled by `stride`, capped at `cap2`. */
+function rangeCombos(mins: number[], maxs: number[], cap: number, stride: number, cap2: number): number[][] {
+  const k = mins.length;
+  const minSuf = new Array(k + 1).fill(0);
+  for (let i = k - 1; i >= 0; i--) minSuf[i] = minSuf[i + 1] + mins[i];
+  const out: number[][] = [];
+  const acc: number[] = [];
+  let idx = 0;
+  const rec = (i: number, used: number): void => {
+    if (out.length >= cap2) return;
+    if (i === k) {
+      if (idx % stride === 0) out.push(acc.slice());
+      idx++;
+      return;
+    }
+    const hi = Math.min(maxs[i], cap - used - minSuf[i + 1]);
+    for (let n = mins[i]; n <= hi; n++) {
+      acc.push(n);
+      rec(i + 1, used + n);
+      acc.pop();
+      if (out.length >= cap2) return;
+    }
+  };
+  rec(0, 0);
+  return out;
+}
+
 export interface AdvisorEnumeration {
   skeletons: AdvisorSkeleton[];
   /** True if the date/length grid was sampled (coarsened) to stay within budget. */
@@ -231,17 +281,15 @@ function selectOrders(
  */
 export function enumerateAdvisor(spec: AdvisorSpec, maxRoutes: number): AdvisorEnumeration {
   const origins = [...new Set(spec.origins.filter(Boolean))];
-  const dests = spec.destinations;
-  const allPerms = permute(dests);
+  const allPerms = permute(spec.destinations);
   const perms = selectOrders(allPerms, origins, spec.optimizeGeography !== false);
-  const total = spec.totalNights;
 
-  const slack = spec.latestReturn
-    ? Math.max(0, daysBetween(spec.startDate, spec.latestReturn) - total)
-    : 0;
+  // DATES mode: fixed totalNights. MONTH/window mode: stays come from per-city
+  // ranges within [startDate, endDate].
+  const total = typeof spec.totalNights === 'number' && spec.totalNights > 0 ? spec.totalNights : null;
+  const windowDays = spec.endDate ? Math.max(0, daysBetween(spec.startDate, spec.endDate)) : null;
 
   const originPairs = spec.returnToOrigin ? origins.length * origins.length : origins.length;
-  // The irreducible part — every order × origin pairing — can't be sampled away.
   if (perms.length * originPairs > maxRoutes) {
     throw new Error(
       'Too many origin × place-order combinations to search. ' +
@@ -249,37 +297,42 @@ export function enumerateAdvisor(spec: AdvisorSpec, maxRoutes: number): AdvisorE
     );
   }
 
-  // Splits-per-perm count is permutation-invariant; compute once.
-  const mins0 = perms[0].map((d) => Math.max(1, d.minNights ?? 1));
-  const maxs0 = perms[0].map((d) => Math.min(d.maxNights ?? total, total));
-  const splitsCount = countSplits(mins0, maxs0, total);
-
-  // Budget per (perm × origin pair) = how many (offset × split) we can afford.
+  // Per (perm × origin pair) budget for (combos × start offsets).
   const perBranch = Math.max(1, Math.floor(maxRoutes / (perms.length * originPairs)));
-  let step: number;
-  let splitStride: number;
-  let splitCap: number;
-  if (splitsCount <= perBranch) {
-    splitStride = 1;
-    splitCap = Infinity;
-    const maxOffsets = Math.max(1, Math.floor(perBranch / splitsCount));
-    step = Math.max(1, Math.ceil((slack + 1) / maxOffsets));
-  } else {
-    step = slack + 1; // only the earliest start date
-    splitCap = perBranch;
-    splitStride = Math.max(1, Math.ceil(splitsCount / perBranch));
-  }
-  const offsets: number[] = [];
-  for (let o = 0; o <= slack; o += step) offsets.push(o);
-  const sampled = step > 1 || splitCap < splitsCount;
+  const COMBO_CAP = Math.max(1, Math.min(400, perBranch));
 
+  let sampled = false;
+  let dateStepDays = 1;
   const out: AdvisorSkeleton[] = [];
+
   for (const perm of perms) {
     const mins = perm.map((d) => Math.max(1, d.minNights ?? 1));
-    const maxs = perm.map((d) => Math.min(d.maxNights ?? total, total));
     const order = perm.map((d) => d.code);
-    for (const split of nightSplits(mins, maxs, total, splitStride, splitCap)) {
-      for (const off of offsets) {
+
+    let combos: number[][];
+    if (total != null) {
+      const maxs = perm.map((d) => Math.min(d.maxNights ?? total, total));
+      const cnt = countSplits(mins, maxs, total);
+      const stride = cnt > COMBO_CAP ? Math.ceil(cnt / COMBO_CAP) : 1;
+      if (stride > 1) sampled = true;
+      combos = nightSplits(mins, maxs, total, stride, COMBO_CAP);
+    } else if (windowDays != null) {
+      const maxs = perm.map((d) => Math.min(d.maxNights ?? windowDays, windowDays));
+      const cnt = countRangeCombos(mins, maxs, windowDays);
+      const stride = cnt > COMBO_CAP ? Math.ceil(cnt / COMBO_CAP) : 1;
+      if (stride > 1) sampled = true;
+      combos = rangeCombos(mins, maxs, windowDays, stride, COMBO_CAP);
+    } else {
+      combos = [mins]; // no total, no window → minimum stays, fixed start
+    }
+
+    const offPerCombo = Math.max(1, Math.floor(perBranch / Math.max(1, combos.length)));
+    for (const nights of combos) {
+      const sum = nights.reduce((a, b) => a + b, 0);
+      const offMax = windowDays != null ? Math.max(0, windowDays - sum) : 0;
+      const step = offMax + 1 > offPerCombo ? Math.ceil((offMax + 1) / offPerCombo) : 1;
+      if (step > 1) { sampled = true; dateStepDays = Math.max(dateStepDays, step); }
+      for (let off = 0; off <= offMax; off += step) {
         const startDate = addDays(spec.startDate, off);
         for (const depart of origins) {
           const returns = spec.returnToOrigin ? origins : [null];
@@ -289,20 +342,21 @@ export function enumerateAdvisor(spec: AdvisorSpec, maxRoutes: number): AdvisorE
             let from = depart;
             perm.forEach((d, i) => {
               legs.push({ origin: from, destination: d.code, date: cursor });
-              cursor = addDays(cursor, split[i]);
+              cursor = addDays(cursor, nights[i]);
               from = d.code;
             });
             if (ret) legs.push({ origin: from, destination: ret, date: cursor });
-            out.push({ origin: depart, returnOrigin: ret, startDate, nightsPerStop: split, order, legs });
+            out.push({ origin: depart, returnOrigin: ret, startDate, nightsPerStop: nights, order, legs });
           }
         }
       }
     }
+    if (out.length > maxRoutes * 2) { sampled = true; break; }
   }
   return {
     skeletons: out,
     sampled,
-    dateStepDays: step,
+    dateStepDays,
     ordersConsidered: allPerms.length,
     ordersPriced: perms.length,
   };
@@ -315,15 +369,31 @@ export async function planAdvisor(
 ): Promise<AdvisorResult> {
   const currency = spec.currency || 'USD';
   const maxDest = options.maxDestinations ?? 6;
-  if (spec.destinations.length < 1) throw new Error('Add at least one place to visit.');
-  if (spec.destinations.length > maxDest) {
-    throw new Error(`Too many destinations (${spec.destinations.length} > ${maxDest}).`);
-  }
-  if (spec.totalNights < spec.destinations.length) {
-    throw new Error(
-      `Total nights (${spec.totalNights}) must be at least the number of places ` +
-        `(${spec.destinations.length}) so each gets at least one night.`,
-    );
+  const k = spec.destinations.length;
+  if (k < 1) throw new Error('Add at least one place to visit.');
+  if (k > maxDest) throw new Error(`Too many destinations (${k} > ${maxDest}).`);
+
+  const minTotal = spec.destinations.reduce((s, d) => s + Math.max(1, d.minNights ?? 1), 0);
+  const total = typeof spec.totalNights === 'number' && spec.totalNights > 0 ? spec.totalNights : null;
+  const windowDays = spec.endDate
+    ? Math.round((Date.parse(`${spec.endDate}T00:00:00Z`) - Date.parse(`${spec.startDate}T00:00:00Z`)) / 86_400_000)
+    : null;
+
+  if (total != null) {
+    // DATES mode
+    if (total < minTotal) {
+      throw new Error(`Total nights (${total}) is less than the minimum stays you set (${minTotal}). Raise total nights or lower minimums.`);
+    }
+    if (windowDays != null && windowDays < total) {
+      throw new Error(`The date window (${windowDays} days) is shorter than the total nights (${total}). Widen the dates or lower total nights.`);
+    }
+  } else if (windowDays != null) {
+    // MONTH/window mode
+    if (windowDays < minTotal) {
+      throw new Error(`The minimum stays (${minTotal} nights) don't fit in the chosen window (${windowDays} days). Lower minimums or pick a longer window.`);
+    }
+  } else {
+    throw new Error('Set total nights (with dates), or pick a whole month, so we know how long the trip is.');
   }
 
   const { skeletons, sampled, dateStepDays, ordersPriced } = enumerateAdvisor(

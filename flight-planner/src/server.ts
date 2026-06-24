@@ -264,9 +264,13 @@ function toAdvisorSpec(raw: any): AdvisorSpec {
   if (!Array.isArray(raw.destinations) || raw.destinations.length === 0) {
     throw new Error('Add at least one place to visit.');
   }
-  const totalNights = Number(raw.totalNights);
-  if (!Number.isFinite(totalNights) || totalNights < 1) {
-    throw new Error('Total nights must be a positive number.');
+  // Optional in MONTH/window mode — validated in planAdvisor.
+  let totalNights: number | undefined;
+  if (raw.totalNights != null && String(raw.totalNights).trim() !== '') {
+    totalNights = Number(raw.totalNights);
+    if (!Number.isFinite(totalNights) || totalNights < 1) {
+      throw new Error('Total nights must be a positive number.');
+    }
   }
   const destinations = raw.destinations.map((d: any, i: number) => {
     const code = String(d.code || '').trim().toUpperCase();
@@ -280,17 +284,20 @@ function toAdvisorSpec(raw: any): AdvisorSpec {
   });
   const startDate = String(raw.startDate || '').trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) throw new Error('Earliest departure must be yyyy-mm-dd.');
-  const latestReturn = raw.latestReturn ? String(raw.latestReturn).trim() : undefined;
-  if (latestReturn && !/^\d{4}-\d{2}-\d{2}$/.test(latestReturn)) {
-    throw new Error('Latest return must be yyyy-mm-dd.');
+  // Accept endDate (new) or latestReturn (legacy) as the latest return.
+  const endRaw = raw.endDate ?? raw.latestReturn;
+  const endDate = endRaw ? String(endRaw).trim() : undefined;
+  if (endDate && !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+    throw new Error('Latest return / end date must be yyyy-mm-dd.');
   }
+  if (endDate && endDate < startDate) throw new Error('End date must be on or after the start date.');
   const cabin = String(raw.cabin || 'ECONOMY').toUpperCase();
 
   return {
     origins,
     destinations,
     startDate,
-    latestReturn,
+    endDate,
     totalNights,
     returnToOrigin: raw.returnToOrigin !== false,
     optimizeGeography: raw.optimizeGeography !== false,

@@ -321,19 +321,27 @@
         <label for="a-optimizeGeography">Geographically optimize (skip inefficient back-and-forth — also cheaper)</label>
       </div>
 
-      <div class="row">
-        <div class="field"><label for="a-startDate">Earliest departure</label><input id="a-startDate" type="date" value="2026-07-01" /></div>
-        <div class="field"><label for="a-latestReturn">Latest return</label><input id="a-latestReturn" type="date" value="2026-07-21" /></div>
-      </div>
-      <div class="field"><label for="a-totalNights">Total nights for the whole trip</label><input id="a-totalNights" type="number" min="1" value="12" /></div>
-
       <div class="field">
-        <label for="a-month">No specific dates? Search a whole month</label>
-        <div class="inline" style="gap:8px">
-          <input type="month" id="a-month" style="flex:1" />
-          <button type="button" id="a-month-go" class="mini">Find best in month</button>
+        <label>How do you want to set timing?</label>
+        <div class="seg" id="a-mode" style="width:100%">
+          <button type="button" data-mode="dates" class="act" style="flex:1">Specific dates</button>
+          <button type="button" data-mode="month" style="flex:1">Whole month</button>
         </div>
-        <div class="hint">We'll search the whole month and pick the best days based on your cities and minimum nights.</div>
+        <div class="hint">Pick one — specific dates with a total nights, <b>or</b> a whole month (we find the best days).</div>
+      </div>
+
+      <div id="a-dates-mode">
+        <div class="row">
+          <div class="field"><label for="a-startDate">Earliest departure</label><input id="a-startDate" type="date" value="2026-07-01" /></div>
+          <div class="field"><label for="a-endDate">Latest return</label><input id="a-endDate" type="date" value="2026-07-21" /></div>
+        </div>
+        <div class="field"><label for="a-totalNights">Total nights for the whole trip</label><input id="a-totalNights" type="number" min="1" value="12" /></div>
+      </div>
+
+      <div id="a-month-mode" style="display:none">
+        <div class="field"><label for="a-month">Month to search</label><input type="month" id="a-month" />
+          <div class="hint">We search the whole month and pick the best days from your cities + their min/max nights — no total nights needed.</div>
+        </div>
       </div>
 
       <div class="row-3">

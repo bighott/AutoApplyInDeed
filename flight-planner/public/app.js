@@ -419,11 +419,25 @@ function readAdvisorSpec(){
       minNights:min?Number(min):undefined, maxNights:max?Number(max):undefined };
   }).filter(d=>d.code);
   if(!destinations.length) throw new Error('Add at least one place to visit.');
-  return { origins, destinations, startDate:val('a-startDate'), latestReturn:val('a-latestReturn')||undefined,
-    totalNights:Number(val('a-totalNights')), returnToOrigin:$('a-returnToOrigin').checked,
+  const base={ origins, destinations, returnToOrigin:$('a-returnToOrigin').checked,
     optimizeGeography:$('a-optimizeGeography').checked, excludeAirlines:readExcl('a-excl-list'),
     adults:Number(val('a-adults')), cabin:val('a-cabin'), currency:val('a-currency').trim().toUpperCase()||'USD' };
+  if(AMODE==='month'){
+    const m=val('a-month'); if(!m) throw new Error('Pick a month to search.');
+    const [y,mo]=m.split('-').map(Number);
+    return { ...base, startDate:`${m}-01`, endDate:new Date(Date.UTC(y,mo,0)).toISOString().slice(0,10) };
+  }
+  return { ...base, startDate:val('a-startDate'), endDate:val('a-endDate')||undefined, totalNights:Number(val('a-totalNights')) };
 }
+
+// timing mode: specific dates vs whole month (either/or)
+let AMODE='dates';
+function setAMode(m){ AMODE=m;
+  document.querySelectorAll('#a-mode button').forEach(b=>b.classList.toggle('act', b.dataset.mode===m));
+  $('a-dates-mode').style.display = m==='dates' ? '' : 'none';
+  $('a-month-mode').style.display = m==='month' ? '' : 'none';
+}
+document.querySelectorAll('#a-mode button').forEach(b=>b.onclick=()=>setAMode(b.dataset.mode));
 
 let ASTATE=null;
 function ashow(html){ $('a-results').innerHTML=`<div class="results-head"><h2>Best routes</h2></div>${html}`; }
@@ -659,11 +673,3 @@ wireExcl('a-excl-pick','a-excl-add','a-excl-list');
 // --- baggage re-render + whole-month search ----------------------------------
 if($('bags')) $('bags').addEventListener('input', ()=>{ if(STATE&&STATE.plan) render(); });
 if($('a-bags')) $('a-bags').addEventListener('input', ()=>{ if(ASTATE&&ASTATE.result) renderAdvisor(); });
-if($('a-month-go')) $('a-month-go').onclick=()=>{
-  const m=$('a-month').value;
-  if(!m){ $('a-keyWarn').innerHTML='<div class="banner warn">Pick a month first.</div>'; return; }
-  const [y,mo]=m.split('-').map(Number);
-  $('a-startDate').value=`${m}-01`;
-  $('a-latestReturn').value=new Date(Date.UTC(y,mo,0)).toISOString().slice(0,10); // last day of month
-  if($('aform').requestSubmit) $('aform').requestSubmit(); else $('aform').dispatchEvent(new Event('submit',{cancelable:true}));
-};
