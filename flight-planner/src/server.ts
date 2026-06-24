@@ -91,6 +91,46 @@ function configuredSources(): NamedProvider[] {
   return out;
 }
 
+/**
+ * How much to trust each source's prices, surfaced to the UI as a badge.
+ *  - live     : a real-time carrier/aggregator query (Amadeus, Google Flights)
+ *  - cached   : aggregated/recent fares that may lag the live market (Travelpayouts)
+ *  - estimate : our own static/demo fares — directional only (Expedia table, Mock)
+ */
+const SOURCE_CONFIDENCE: Record<string, 'live' | 'cached' | 'estimate'> = {
+  'Google Flights': 'live',
+  Amadeus: 'live',
+  Travelpayouts: 'cached',
+  Expedia: 'estimate',
+  Mock: 'estimate',
+};
+function providerDisplayName(kind: string): string {
+  return ({ serpapi: 'Google Flights', amadeus: 'Amadeus', travelpayouts: 'Travelpayouts', expedia: 'Expedia', mock: 'Mock' } as Record<string, string>)[kind] || kind;
+}
+/**
+ * Build the confidence badge(s) for a finished plan. Single-source plans get one
+ * badge; cross-check reports the distinct sources that actually won a leg, so the
+ * UI can show "mixed" with a per-source breakdown.
+ */
+function confidenceSummary(providerKind: string, comparison: { rows: Array<{ cheapestProvider?: string | null }> } | null): {
+  tier: 'live' | 'cached' | 'estimate' | 'mixed';
+  sources: Array<{ name: string; tier: 'live' | 'cached' | 'estimate'; legs: number }>;
+} {
+  if (providerKind === 'crosscheck' && comparison) {
+    const counts = new Map<string, number>();
+    for (const r of comparison.rows) {
+      if (r.cheapestProvider) counts.set(r.cheapestProvider, (counts.get(r.cheapestProvider) ?? 0) + 1);
+    }
+    const sources = [...counts.entries()].map(([name, legs]) => ({ name, tier: SOURCE_CONFIDENCE[name] ?? 'estimate', legs }));
+    const tiers = new Set(sources.map((s) => s.tier));
+    const tier = sources.length === 0 ? 'estimate' : tiers.size === 1 ? [...tiers][0] : 'mixed';
+    return { tier, sources };
+  }
+  const name = providerDisplayName(providerKind);
+  const tier = SOURCE_CONFIDENCE[name] ?? 'estimate';
+  return { tier, sources: [{ name, tier, legs: 0 }] };
+}
+
 // Strict policy: same-origin scripts only, NO eval / inline script. Inline
 // styles are allowed ('unsafe-inline' in style-src) — that's a style concern,
 // not a script-injection vector.
@@ -431,6 +471,7 @@ const server = createServer(async (req, res) => {
           plan,
           comparison,
           cityByCode,
+          confidence: confidenceSummary(provider, comparison),
           textPlan: formatPlan(spec, plan),
         }),
       );
@@ -451,7 +492,7 @@ const server = createServer(async (req, res) => {
         if (city) cityByCode[code] = city;
       }
       res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ ok: true, provider, spec, result, cityByCode }));
+      res.end(JSON.stringify({ ok: true, provider, spec, result, cityByCode, confidence: confidenceSummary(provider, null) }));
       return;
     }
 

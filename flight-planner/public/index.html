@@ -152,6 +152,16 @@
   .badge.cheap { background:var(--good-soft); color:#0c7a45; }
   .badge.fast { background:var(--brand-soft); color:var(--brand-d); }
   .badge.value { background:var(--amber-soft); color:#9a6206; }
+  .confbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:0 0 14px; }
+  .conf-badge { font-size:11px; font-weight:700; padding:3px 10px; border-radius:999px; letter-spacing:.2px; cursor:help; }
+  .conf-badge.conf-live { background:var(--good-soft); color:#0c7a45; }
+  .conf-badge.conf-cached { background:var(--brand-soft); color:var(--brand-d); }
+  .conf-badge.conf-est { background:var(--amber-soft); color:#9a6206; }
+  .conf-badge.conf-mixed { background:var(--brand-soft); color:var(--brand-d); }
+  .conf-dot { display:inline-block; width:8px; height:8px; border-radius:50%; vertical-align:middle; }
+  .conf-dot.conf-live { background:#16a34a; }
+  .conf-dot.conf-cached { background:var(--brand); }
+  .conf-dot.conf-est { background:var(--amber); }
   .trip-cost { text-align:right; }
   .trip-price { font-size:26px; font-weight:800; line-height:1.1; letter-spacing:-.5px; }
   .trip-time { color:var(--muted); font-size:13px; }

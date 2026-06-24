@@ -105,13 +105,12 @@ const HINTS={ mock:'Demo prices. Works for any route instantly — great for try
   travelpayouts:'Free, real (cached) prices from Travelpayouts/Aviasales. Needs a free TRAVELPAYOUTS_TOKEN. No per-search cost.',
   amadeus:'Real bookable fares from Amadeus (free tier). Needs AMADEUS_CLIENT_ID & SECRET. Counts toward the search budget.',
   expedia:'Free Expedia fare snapshot — no key, no cost, but only covers the seeded SFO/JFK/LHR July-2026 legs.',
-  crosscheck:'Google Flights (live) vs the Expedia snapshot, picks the cheaper per leg.' };
-// Which .env credential each source needs (mock/expedia need none).
-const NEEDS_CRED={ serpapi:'SERPAPI_KEY', crosscheck:'SERPAPI_KEY', travelpayouts:'TRAVELPAYOUTS_TOKEN', amadeus:'AMADEUS_CLIENT_ID & AMADEUS_CLIENT_SECRET' };
+  crosscheck:'Combines every configured source (Google Flights, Travelpayouts, Amadeus) and the Expedia snapshot, picking the cheapest per leg. Works with whatever keys you have — Expedia fills any gaps.' };
+// Which .env credential each source needs (mock/expedia/crosscheck need none).
+const NEEDS_CRED={ serpapi:'SERPAPI_KEY', travelpayouts:'TRAVELPAYOUTS_TOKEN', amadeus:'AMADEUS_CLIENT_ID & AMADEUS_CLIENT_SECRET' };
 let CRED={ serpapi:false, travelpayouts:false, amadeus:false };
 function providerReady(v){
-  if(v==='mock'||v==='expedia') return true;
-  if(v==='crosscheck') return CRED.serpapi;
+  if(v==='mock'||v==='expedia'||v==='crosscheck') return true; // crosscheck always has the free Expedia floor
   return !!CRED[v];
 }
 function credWarn(v, slotId){
@@ -300,6 +299,23 @@ function legMatrixHtml(plan, cur){
   return html+`</tbody></table>`;
 }
 
+// ---- data-confidence badge -------------------------------------------------
+const CONF_META={
+  live:{lab:'Live prices',cls:'conf-live',tip:'Real-time fares from a carrier/aggregator query.'},
+  cached:{lab:'Cached prices',cls:'conf-cached',tip:'Recent aggregated fares that may lag the live market.'},
+  estimate:{lab:'Estimated',cls:'conf-est',tip:'Static/demo fares — directional only, not bookable quotes.'},
+  mixed:{lab:'Mixed sources',cls:'conf-mixed',tip:'Different legs were priced by different sources.'} };
+function confBadgeHtml(conf){
+  if(!conf) return '';
+  const m=CONF_META[conf.tier]||CONF_META.estimate;
+  const used=(conf.sources||[]).filter(s=>s).map(s=>{
+    const t=CONF_META[s.tier]||CONF_META.estimate;
+    return `${s.name}${s.legs?` <span class="meta">(${s.legs} leg${s.legs===1?'':'s'})</span>`:''} <span class="conf-dot ${t.cls}"></span>`;
+  }).join(' · ');
+  return `<div class="confbar"><span class="conf-badge ${m.cls}" title="${m.tip}">${m.lab}</span>`+
+    (used?`<span class="meta">${used}</span>`:'')+`</div>`;
+}
+
 function render(){
   const { plan, spec, comparison } = STATE;
   const cur=spec.currency||'USD';
@@ -326,6 +342,7 @@ function render(){
   let html=`<div class="toolbar"><span class="lbl">Top 5 by</span><div class="seg">${seg('price','Cheapest')}${seg('time','Fastest')}${seg('value','Best value')}</div>`+
     `<button class="mini" id="csvBtn">⬇ Export CSV</button><button class="mini" id="saveBtn">★ Save</button>`+
     `<span class="lbl" style="margin-left:auto">${plan.allItineraries.length} options · ${plan.queriesRun} searches</span></div>`;
+  html+=confBadgeHtml(STATE.confidence);
   if(plan.sampled) html+=`<div class="banner warn">Wide window: I sampled start dates (every ${plan.dateStepDays||1} day${(plan.dateStepDays||1)===1?'':'s'}) and some stay lengths to stay fast. Set max nights or a tighter window for finer results.</div>`;
   html+=cards;
 
@@ -479,7 +496,7 @@ $('aform').onsubmit=async(e)=>{
       body:JSON.stringify({ spec:readAdvisorSpec(), provider:$('a-provider').value }) });
     const data=await res.json();
     if(!data.ok) throw new Error(data.error||'Request failed');
-    ASTATE={ result:data.result, spec:data.spec, cityByCode:data.cityByCode, sort:'price' };
+    ASTATE={ result:data.result, spec:data.spec, cityByCode:data.cityByCode, confidence:data.confidence, sort:'price' };
     renderAdvisor();
   } catch(err){ ashow(`<div class="error"><b>Error:</b> ${escapeHtml(err.message)}</div>`); }
   finally { btn.disabled=false; btn.textContent='✦ Plan my trip'; }
@@ -501,6 +518,7 @@ function renderAdvisor(){
   let html=`<div class="toolbar"><span class="lbl">Top 5 by</span><div class="seg">${seg('price','Cheapest')}${seg('time','Fastest')}${seg('value','Best value')}</div>`+
     `<button class="mini" id="a-csvBtn">⬇ Export CSV</button><button class="mini" id="a-saveBtn">★ Save</button>`+
     `<span class="lbl" style="margin-left:auto">${r.ordersPriced}/${r.permutationsTried} orders · ${r.routesConsidered.toLocaleString()} routes · ${r.queriesRun} searches</span></div>`;
+  html+=confBadgeHtml(ASTATE.confidence);
   if(r.sampled) html+=`<div class="banner warn">Wide search: I sampled start dates (every ${r.dateStepDays} day${r.dateStepDays===1?'':'s'}) and some trip-length splits to stay fast. Narrow the date window or set per-place night ranges for finer results.</div>`;
   html+=cards;
   html+=`<details><summary>More routes (${r.allItineraries.length})</summary><table><thead><tr><th>#</th><th class="num">Total</th><th class="num">Time</th><th>Route</th><th>Nights</th><th>Start</th></tr></thead><tbody>`+
