@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Skyroute — find your trip</title>
+<title>Plan My Flight</title>
 <style>
   :root {
     --bg:#eef5ff; --surface:#ffffff; --surface-2:#f5f9ff; --line:#e3eaf4;
@@ -14,6 +14,22 @@
     --shadow:0 1px 2px rgba(18,38,63,.05), 0 6px 20px rgba(18,38,63,.06);
     --shadow-lg:0 8px 30px rgba(18,38,63,.10);
   }
+  html[data-theme="dark"] {
+    --bg:#0c141f; --surface:#131f30; --surface-2:#0f1a28; --line:#26384f;
+    --ink:#e9eff7; --muted:#9fb0c6;
+    --brand:#3a93ee; --brand-d:#2f7fd6; --brand-soft:#16273d; --brand-ring:rgba(58,147,238,.30);
+    --good:#3ec07a; --good-soft:#143020; --warn:#e0a23a; --warn-soft:#2c2410;
+    --bad:#f0726a; --bad-soft:#2e1614; --amber:#e6ad45; --amber-soft:#2c2410;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.45);
+    --shadow-lg:0 12px 36px rgba(0,0,0,.55);
+  }
+  html[data-theme="dark"] body {
+    background:
+      radial-gradient(820px 360px at 8% -6%, rgba(48,90,150,.30) 0%, rgba(0,0,0,0) 60%),
+      radial-gradient(680px 300px at 95% 4%, rgba(36,76,130,.26) 0%, rgba(0,0,0,0) 55%),
+      linear-gradient(180deg, #0a1320 0%, #0c141f 42%, #0d1724 100%);
+  }
+  html[data-theme="dark"] .topbar { background:rgba(16,26,40,.82); }
   * { box-sizing:border-box; }
   body {
     margin:0; color:var(--ink); min-height:100vh;
@@ -34,17 +50,16 @@
     background:rgba(255,255,255,.78); backdrop-filter:saturate(140%) blur(10px);
     border-bottom:1px solid var(--line);
   }
-  .brand { display:flex; align-items:center; gap:10px; font-weight:800; font-size:19px; letter-spacing:-.2px; }
-  .brand-logo {
-    width:34px; height:34px; border-radius:11px; display:grid; place-items:center; color:#fff; font-size:18px;
-    background:linear-gradient(150deg,#43a4ff,#1f7ae0); box-shadow:0 4px 12px var(--brand-ring);
-  }
-  .brand b { color:var(--ink); } .brand span { color:var(--brand); }
-  .nav { display:flex; gap:4px; margin-left:6px; }
+  .brand { display:flex; align-items:center; gap:11px; }
+  .brand-logo { display:block; filter:drop-shadow(0 4px 10px var(--brand-ring)); }
+  .brand-name { font-weight:800; font-size:19px; letter-spacing:-.3px; color:var(--ink); }
+  .brand-name span { color:var(--brand); }
+  .nav { display:flex; gap:4px; margin-left:14px; }
   .tab { padding:8px 16px; border-radius:999px; border:0; background:transparent; color:var(--muted); font:inherit; font-weight:600; font-size:14px; cursor:pointer; }
   .tab:hover { color:var(--ink); background:var(--brand-soft); }
   .tab.act { background:var(--brand); color:#fff; box-shadow:0 4px 12px var(--brand-ring); }
-  .topbar .tag { margin-left:auto; color:var(--muted); font-size:13px; }
+  .theme-btn { margin-left:auto; width:40px; height:40px; border-radius:12px; border:1px solid var(--line); background:var(--surface); color:var(--ink); cursor:pointer; font-size:17px; display:grid; place-items:center; }
+  .theme-btn:hover { border-color:var(--brand); color:var(--brand); }
 
   .pane { display:none; }
   .pane.act { display:block; }
@@ -163,13 +178,22 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><span class="brand-logo">✈</span><span><b>Sky</b><span>route</span></span></div>
+    <div class="brand">
+      <svg class="brand-logo" viewBox="0 0 40 40" width="38" height="38" role="img" aria-label="Plan My Flight logo">
+        <defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5ab0ff"/><stop offset="1" stop-color="#1f7ae0"/></linearGradient></defs>
+        <rect width="40" height="40" rx="11" fill="url(#sky)"/>
+        <g fill="#ffffff" opacity=".88"><ellipse cx="11" cy="30" rx="7" ry="3"/><ellipse cx="27" cy="32" rx="6.5" ry="2.7"/></g>
+        <path d="M34 8 L9 16 L20 20 Z" fill="#ffffff"/>
+        <path d="M34 8 L20 20 L16 28 Z" fill="#d8ebff"/>
+      </svg>
+      <span class="brand-name">Plan My <span>Flight</span></span>
+    </div>
     <nav class="nav">
       <button class="tab act" data-pane="planner">Multi-city</button>
       <button class="tab" data-pane="advisor">Plan my trip</button>
       <button class="tab" data-pane="saved">Saved</button>
     </nav>
-    <span class="tag">Real fares · best routes · book in a click</span>
+    <button id="themeBtn" class="theme-btn" type="button" aria-label="Toggle dark mode">☾</button>
   </header>
 
   <div id="pane-planner" class="pane act">
@@ -211,8 +235,9 @@
         <label for="provider">Price source</label>
         <select id="provider">
           <option value="mock">Demo prices (no key needed)</option>
-          <option value="serpapi">Live fares (Google Flights)</option>
-          <option value="crosscheck">Cross-check (live vs Expedia)</option>
+          <option value="serpapi">Google Flights (live)</option>
+          <option value="expedia">Expedia (snapshot, free)</option>
+          <option value="crosscheck">Cross-check (Google Flights vs Expedia)</option>
         </select>
         <div class="hint" id="providerHint"></div>
       </div>
@@ -273,8 +298,9 @@
         <label for="a-provider">Price source</label>
         <select id="a-provider">
           <option value="mock">Demo prices (no key needed)</option>
-          <option value="serpapi">Live fares (Google Flights)</option>
-          <option value="crosscheck">Cross-check (live vs Expedia)</option>
+          <option value="serpapi">Google Flights (live)</option>
+          <option value="expedia">Expedia (snapshot, free)</option>
+          <option value="crosscheck">Cross-check (Google Flights vs Expedia)</option>
         </select>
         <div class="hint" id="a-providerHint"></div>
       </div>
@@ -294,7 +320,13 @@
   <div class="wrap" style="grid-template-columns:1fr">
     <div class="card">
       <h2>Saved trips</h2>
-      <p class="sub">Saved searches live in this browser. Reopening one costs <b>nothing</b> — you see exactly the options you saved.</p>
+      <p class="sub">Saved searches live in this browser. Reopening one — or importing a CSV you exported before — costs <b>nothing</b> (no API searches).</p>
+      <div class="inline" style="margin-bottom:14px;gap:12px;flex-wrap:wrap">
+        <label for="csvUpload" class="mini" style="cursor:pointer">⬆ Import a CSV</label>
+        <input type="file" id="csvUpload" accept=".csv,text/csv" style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" />
+        <span class="hint" id="importMsg" style="margin:0"></span>
+      </div>
+      <div id="saved-view"></div>
       <div id="saved-list"></div>
     </div>
   </div>

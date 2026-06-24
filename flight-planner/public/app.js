@@ -3,6 +3,16 @@ const money = (n,c) => n==null ? '—' : `${c} ${Number(n).toFixed(2)}`;
 const fmtMins = (m) => m==null ? '—' : `${Math.floor(m/60)}h ${String(m%60).padStart(2,'0')}m`;
 const escapeHtml = (s) => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
+// ---- theme (light/dark) -----------------------------------------------------
+function applyTheme(t){
+  document.documentElement.dataset.theme=t;
+  try { localStorage.setItem('pmf_theme', t); } catch {}
+  const b=$('themeBtn');
+  if(b){ b.textContent = t==='dark'?'☀':'☾'; b.setAttribute('aria-label', t==='dark'?'Switch to light mode':'Switch to dark mode'); }
+}
+applyTheme((()=>{ try { return localStorage.getItem('pmf_theme')||'light'; } catch { return 'light'; } })());
+$('themeBtn').onclick=()=>applyTheme(document.documentElement.dataset.theme==='dark'?'light':'dark');
+
 // ---- autocomplete -----------------------------------------------------------
 async function fetchAirports(q){ try { const r=await fetch(`/api/airports?q=${encodeURIComponent(q)}&limit=8`); return r.ok?r.json():[]; } catch { return []; } }
 function attachAutocomplete(input, onSelect){
@@ -64,13 +74,15 @@ addStop('JFK','New York',2,3);
 addStop('LHR','London',3,4);
 
 // ---- provider hint + key warning -------------------------------------------
-const HINTS={ mock:'Deterministic fake prices. Works for any route instantly — great for trying the UI.',
-  serpapi:'Real fares via your SERPAPI_KEY (in .env). One billed search per unique leg/date.',
-  crosscheck:'SerpApi live vs the Expedia snapshot, picks the cheaper per leg. Expedia data only covers the seeded SFO/JFK/LHR July-2026 legs.' };
+const HINTS={ mock:'Demo prices. Works for any route instantly — great for trying the app, no key or cost.',
+  serpapi:'Real fares via Google Flights (uses your SERPAPI_KEY). One billed search per unique leg/date.',
+  expedia:'Free Expedia fare snapshot — no key, no cost, but only covers the seeded SFO/JFK/LHR July-2026 legs.',
+  crosscheck:'Google Flights (live) vs the Expedia snapshot, picks the cheaper per leg.' };
+const NEEDS_KEY=(v)=>v==='serpapi'||v==='crosscheck';
 let HAS_KEY=true;
 function updateHint(){
   $('providerHint').textContent=HINTS[$('provider').value];
-  const needsKey=$('provider').value!=='mock';
+  const needsKey=NEEDS_KEY($('provider').value);
   $('keyWarn').innerHTML=(needsKey&&!HAS_KEY)
     ? `<div class="banner warn">No <b>SERPAPI_KEY</b> detected. Create <code>flight-planner/.env</code> with your key, or use <b>Mock</b> to test now.</div>` : '';
 }
@@ -325,9 +337,9 @@ $('a-addDest').onclick=()=>addADest();
 // advisor provider hint
 function aUpdateHint(){
   $('a-providerHint').textContent=HINTS[$('a-provider').value];
-  const needsKey=$('a-provider').value!=='mock';
+  const needsKey=NEEDS_KEY($('a-provider').value);
   $('a-keyWarn').innerHTML=(needsKey&&!HAS_KEY)
-    ? `<div class="banner warn">No <b>SERPAPI_KEY</b> detected. Use <b>Mock</b>, or add your key to <code>flight-planner/.env</code>. Note: live route search makes many requests.</div>` : '';
+    ? `<div class="banner warn">No <b>SERPAPI_KEY</b> detected. Use <b>Demo</b> or <b>Expedia</b>, or add your key to <code>flight-planner/.env</code>. Note: live route search makes many requests.</div>` : '';
 }
 $('a-provider').onchange=aUpdateHint;
 
@@ -478,17 +490,89 @@ function saveTrip(kind){
 function deleteSaved(id){ persistSaved(loadSaved().filter(e=>e.id!==id)); renderSavedList(); }
 function viewSaved(id){
   const e=loadSaved().find(x=>x.id===id); if(!e) return;
+  if(e.kind==='imported'){ renderImported(e.data, $('saved-view')); $('saved-view').scrollIntoView({behavior:'smooth',block:'start'}); return; }
   if(e.kind==='planner'){ STATE=e.data; STATE.sort='price'; showTab('planner'); render(); }
   else { ASTATE=e.data; ASTATE.sort='price'; showTab('advisor'); renderAdvisor(); }
 }
+const KIND_LABEL={ planner:'Multi-city planner', advisor:'Plan my trip', imported:'Imported CSV' };
+const KIND_ICON={ advisor:'✦ ', imported:'⬆ ', planner:'' };
 function renderSavedList(){
   const items=loadSaved();
-  if(!items.length){ $('saved-list').innerHTML=`<div class="empty">No saved trips yet. Run a search and click <b>★ Save</b> in the results.</div>`; return; }
+  if(!items.length){ $('saved-list').innerHTML=`<div class="empty">No saved trips yet. Run a search and click <b>★ Save</b>, or <b>import a CSV</b> above.</div>`; return; }
   $('saved-list').innerHTML=items.map(e=>`<div class="saved-row">
-    <div><div style="font-weight:600">${e.kind==='advisor'?'✦ ':''}${escapeHtml(e.label)}</div>
-      <div class="meta">${e.kind==='advisor'?'Plan my trip':'Multi-city planner'} · saved ${escapeHtml(new Date(e.savedAt).toLocaleString())}</div></div>
+    <div><div style="font-weight:600">${KIND_ICON[e.kind]||''}${escapeHtml(e.label)}</div>
+      <div class="meta">${KIND_LABEL[e.kind]||e.kind} · saved ${escapeHtml(new Date(e.savedAt).toLocaleString())}</div></div>
     <div style="display:flex;gap:8px"><button class="mini" data-view="${e.id}">View</button><button class="xbtn" data-del="${e.id}" title="Delete" aria-label="Delete">✕</button></div>
   </div>`).join('');
   $('saved-list').querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>viewSaved(b.dataset.view));
   $('saved-list').querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>deleteSaved(b.dataset.del));
 }
+
+// --- CSV import (repopulate a saved trip without using searches) --------------
+function parseCsv(text){
+  const rows=[]; let field='', row=[], inQ=false; const n=text.length;
+  for(let i=0;i<n;i++){ const c=text[i];
+    if(inQ){ if(c==='"'){ if(text[i+1]==='"'){ field+='"'; i++; } else inQ=false; } else field+=c; continue; }
+    if(c==='"'){ inQ=true; }
+    else if(c===','){ row.push(field); field=''; }
+    else if(c==='\n'||c==='\r'){ if(c==='\r'&&text[i+1]==='\n') i++; row.push(field); if(row.some(x=>x!=='')) rows.push(row); row=[]; field=''; }
+    else field+=c;
+  }
+  if(field!==''||row.length){ row.push(field); if(row.some(x=>x!=='')) rows.push(row); }
+  return rows;
+}
+function parseDurLabel(s){ const h=/(\d+)\s*h/i.exec(s||''), m=/(\d+)\s*m/i.exec(s||''); if(!h&&!m) return undefined; return (h?+h[1]*60:0)+(m?+m[1]:0); }
+function importCsvText(text, fileName){
+  const rows=parseCsv(text); if(rows.length<2) throw new Error('CSV looks empty.');
+  const head=rows[0].map(h=>h.trim().toLowerCase());
+  const ix=name=>head.indexOf(name);
+  const iOpt=ix('option'), iFrom=ix('from'), iTo=ix('to'), iDate=ix('date'), iAir=ix('airline'),
+        iStops=ix('stops'), iDur=ix('duration'), iPrice=ix('price'), iCur=ix('currency'), iBook=ix('book');
+  if(iFrom<0||iTo<0||iPrice<0) throw new Error('Need at least From, To and Price columns.');
+  const groups=new Map();
+  for(let r=1;r<rows.length;r++){ const row=rows[r]; if(!row[iFrom]) continue;
+    const opt=iOpt>=0?(row[iOpt]||'1'):'1';
+    if(!groups.has(opt)) groups.set(opt,[]);
+    const dur=iDur>=0?row[iDur]:'';
+    groups.get(opt).push({ origin:(row[iFrom]||'').trim().toUpperCase(), destination:(row[iTo]||'').trim().toUpperCase(), date:(iDate>=0?row[iDate]:'').trim(),
+      quote:{ price:Number(String(row[iPrice]).replace(/[^0-9.]/g,''))||0, currency:(iCur>=0&&row[iCur]?row[iCur]:'USD').trim().toUpperCase(),
+        airline:iAir>=0?row[iAir]:'', stops:(iStops>=0&&row[iStops]!=='')?Number(row[iStops]):undefined,
+        durationLabel:dur, durationMinutes:parseDurLabel(dur), bookingUrl:iBook>=0?row[iBook]:'' } });
+  }
+  if(!groups.size) throw new Error('No flight rows found.');
+  const itins=[...groups.values()].map(legs=>{
+    const total=legs.reduce((s,l)=>s+(l.quote.price||0),0);
+    const dm=legs.map(l=>l.quote.durationMinutes);
+    return { origin:legs[0].origin, returnOrigin:legs[legs.length-1].destination, legs, total,
+      currency:legs[0].quote.currency||'USD', totalDurationMinutes: dm.every(d=>typeof d==='number')?dm.reduce((a,b)=>a+b,0):null };
+  }).sort((a,b)=>a.total-b.total);
+  return { itins, fileName };
+}
+function importedCard(it, rank){
+  const cur=it.currency||'USD';
+  const route=[...it.legs.map(l=>l.origin), it.legs[it.legs.length-1].destination].join(' → ');
+  return `<div class="trip${rank===1?' top':''}"><div class="trip-head"><div class="trip-rank">${rank}</div><div class="trip-badges"></div>
+    <div class="trip-cost"><div class="trip-price">${money(it.total,cur)}</div><div class="trip-time">${fmtMins(it.totalDurationMinutes)}</div></div></div>
+    <div class="trip-route">${escapeHtml(route)}</div>
+    <div class="trip-legs">${it.legs.map(legRow).join('')}</div></div>`;
+}
+function renderImported(data, container){
+  if(!data||!data.itins||!data.itins.length){ container.innerHTML=''; return; }
+  container.innerHTML=`<div class="section-title">Imported — ${escapeHtml(data.fileName||'CSV')} · ${data.itins.length} option(s) · no searches used</div>`+
+    data.itins.slice(0,12).map((it,i)=>importedCard(it,i+1)).join('');
+  wireLogoFallbacks(container);
+}
+function saveImported(data){
+  const items=loadSaved();
+  items.unshift({ id:Date.now()+'-'+Math.random().toString(36).slice(2), kind:'imported',
+    label:`${escapeHtml(data.fileName)} · ${data.itins.length} option(s)`, savedAt:new Date().toISOString(), data });
+  persistSaved(items); renderSavedList();
+}
+$('csvUpload').onchange=(e)=>{
+  const f=e.target.files&&e.target.files[0]; if(!f) return;
+  const rd=new FileReader();
+  rd.onload=()=>{ try { const data=importCsvText(String(rd.result), f.name); saveImported(data); renderImported(data, $('saved-view')); $('importMsg').textContent=`Imported ${data.itins.length} option(s) from ${f.name}.`; }
+    catch(err){ $('importMsg').textContent='Import failed: '+err.message; } };
+  rd.onerror=()=>{ $('importMsg').textContent='Could not read the file.'; };
+  rd.readAsText(f); e.target.value='';
+};

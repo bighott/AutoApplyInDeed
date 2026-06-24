@@ -138,6 +138,11 @@ async function runPlan(spec: TripSpec, providerKind: string) {
     return { plan, comparison: null };
   }
 
+  if (providerKind === 'expedia') {
+    const plan = await planTrip(expediaStaticProvider, spec);
+    return { plan, comparison: null };
+  }
+
   if (providerKind === 'serpapi') {
     const plan = await planTrip(cachedSerp(requireEnv('SERPAPI_KEY')), spec, {
       maxSearches: MAX_SEARCHES,
@@ -179,6 +184,7 @@ async function runPlan(spec: TripSpec, providerKind: string) {
 /** A single (cached) FlightProvider for the advisor; cheapest-of for cross-check. */
 function makeProvider(kind: string): FlightProvider {
   if (kind === 'mock') return new MockFlightProvider();
+  if (kind === 'expedia') return expediaStaticProvider;
   if (kind === 'serpapi') return cachedSerp(requireEnv('SERPAPI_KEY'));
   if (kind === 'crosscheck') {
     return new CheapestOfProvider([
@@ -321,7 +327,7 @@ const server = createServer(async (req, res) => {
       const spec = toAdvisorSpec(body.spec);
       const provider = String(body.provider || 'mock');
       const result = await planAdvisor(makeProvider(provider), spec, {
-        maxSearches: provider === 'mock' ? undefined : MAX_SEARCHES,
+        maxSearches: provider === 'mock' || provider === 'expedia' ? undefined : MAX_SEARCHES,
       });
       const cityByCode: Record<string, string> = {};
       for (const code of [...spec.origins, ...spec.destinations.map((d) => d.code)]) {
