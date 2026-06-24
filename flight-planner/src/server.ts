@@ -148,7 +148,11 @@ async function runPlan(spec: TripSpec, providerKind: string) {
 
 const server = createServer(async (req, res) => {
   try {
-    if (req.method === 'GET' && (req.url === '/' || req.url === '/index.html')) {
+    // Route by pathname so query strings (e.g. cache-busting /?v=2) still match.
+    const u = new URL(req.url || '/', 'http://localhost');
+    const path = u.pathname;
+
+    if (req.method === 'GET' && (path === '/' || path === '/index.html')) {
       const html = await readFile(INDEX);
       res.writeHead(200, {
         'content-type': 'text/html; charset=utf-8',
@@ -160,7 +164,7 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    if (req.method === 'GET' && req.url === '/app.js') {
+    if (req.method === 'GET' && path === '/app.js') {
       const js = await readFile(resolve(PUBLIC, 'app.js'));
       res.writeHead(200, {
         'content-type': 'text/javascript; charset=utf-8',
@@ -171,21 +175,20 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    if (req.method === 'GET' && req.url === '/favicon.ico') {
+    if (req.method === 'GET' && path === '/favicon.ico') {
       res.writeHead(204).end();
       return;
     }
 
     // Whether a SerpApi key is configured — lets the UI warn before a failed run.
-    if (req.method === 'GET' && req.url === '/api/config') {
+    if (req.method === 'GET' && path === '/api/config') {
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ hasSerpApiKey: Boolean(process.env.SERPAPI_KEY) }));
       return;
     }
 
     // Airport type-ahead for the UI's location fields.
-    if (req.method === 'GET' && req.url && req.url.startsWith('/api/airports')) {
-      const u = new URL(req.url, 'http://localhost');
+    if (req.method === 'GET' && path === '/api/airports') {
       const matches = searchAirports(
         u.searchParams.get('q') || '',
         Number(u.searchParams.get('limit')) || 8,
@@ -195,7 +198,7 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    if (req.method === 'POST' && req.url === '/api/plan') {
+    if (req.method === 'POST' && path === '/api/plan') {
       const body = JSON.parse((await readBody(req)) || '{}');
       const spec = toSpec(body.spec);
       const provider = String(body.provider || 'mock');
