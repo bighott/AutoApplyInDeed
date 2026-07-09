@@ -144,3 +144,81 @@ export interface PlanResult {
   /** Largest start-date step used when sampling (1 = every day). */
   dateStepDays?: number;
 }
+
+// ============================================================================
+// Accommodation ("Stays") model — hotels & vacation rentals near a destination.
+// Mirrors the flight side: a provider-agnostic interface, with the price/rating/
+// radius filtering done by the stays orchestrator so every source behaves alike.
+// ============================================================================
+
+export type StayType = 'hotel' | 'vacation_rental' | 'other';
+
+/** One accommodation search: where, when, and for whom. */
+export interface StayQuery {
+  /** Free-text location for the source query, e.g. "Paris" or "Rome, Italy". */
+  location: string;
+  /** Optional IATA anchor (e.g. the arrival airport) used to measure radius. */
+  anchorCode?: string;
+  /** Explicit anchor coordinates; override anchorCode when provided. */
+  lat?: number;
+  lon?: number;
+  /** Check-in / check-out (ISO yyyy-mm-dd). */
+  checkIn: string;
+  checkOut: string;
+  adults: number;
+  currency?: string;
+  /** Also query vacation rentals (Airbnb-style). May cost an extra search. */
+  includeVacationRentals?: boolean;
+}
+
+/** Post-filters applied by the orchestrator after a source returns candidates. */
+export interface StayFilters {
+  /** Max great-circle distance (km) from the anchor. */
+  radiusKm?: number;
+  /** Per-night price bounds. */
+  minPrice?: number;
+  maxPrice?: number;
+  /** Minimum overall rating (0–5). */
+  minRating?: number;
+  /** Restrict to these property types. */
+  types?: StayType[];
+}
+
+export interface StaySearchOpts {
+  adults: number;
+  currency?: string;
+  /** Cap on how many candidates a source returns (cost/latency guard). */
+  maxResults?: number;
+  includeVacationRentals?: boolean;
+}
+
+/** A single place to stay, normalized across sources. */
+export interface Stay {
+  name: string;
+  type: StayType;
+  /** Lowest nightly rate; null when the source didn't price it. */
+  pricePerNight: number | null;
+  /** Total for the whole stay; null when unknown. */
+  totalPrice: number | null;
+  currency: string;
+  /** Overall rating on a 0–5 scale; null when unknown. */
+  rating: number | null;
+  reviews: number | null;
+  lat?: number;
+  lon?: number;
+  /** Distance from the anchor in km; filled by the orchestrator. */
+  distanceKm?: number | null;
+  address?: string;
+  thumbnail?: string;
+  amenities?: string[];
+  bookingUrl?: string;
+  /** Which source produced this result. */
+  source?: string;
+}
+
+/** A source of accommodation results (SerpApi Google Hotels, mock, …). */
+export interface AccommodationProvider {
+  readonly name: string;
+  searchStays(q: StayQuery, opts: StaySearchOpts): Promise<Stay[]>;
+}
+

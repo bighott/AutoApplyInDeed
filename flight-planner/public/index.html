@@ -162,6 +162,25 @@
   .conf-dot.conf-live { background:#16a34a; }
   .conf-dot.conf-cached { background:var(--brand); }
   .conf-dot.conf-est { background:var(--amber); }
+  /* Stays */
+  .fromtrip { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+  .fromtrip .chip { background:var(--brand-soft); color:var(--brand-d); border:0; border-radius:999px; padding:6px 12px; font:inherit; font-size:13px; font-weight:600; cursor:pointer; }
+  .fromtrip .chip:hover { background:var(--brand); color:#fff; }
+  .stay-toolbar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+  .stay-card { display:flex; gap:14px; padding:14px; border:1px solid var(--line); border-radius:14px; margin-bottom:12px; }
+  .stay-thumb { width:104px; height:104px; border-radius:10px; object-fit:cover; background:var(--brand-soft); flex:none; }
+  .stay-thumb.ph { display:flex; align-items:center; justify-content:center; font-size:34px; }
+  .stay-body { flex:1; min-width:0; }
+  .stay-name { font-weight:700; font-size:15.5px; color:var(--ink); }
+  .stay-sub { color:var(--muted); font-size:12.5px; margin-top:2px; }
+  .stay-tags { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+  .stay-tag { font-size:11px; font-weight:600; padding:2px 8px; border-radius:999px; background:var(--brand-soft); color:var(--brand-d); }
+  .stay-tag.rental { background:var(--amber-soft); color:#9a6206; }
+  .stay-rate { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--ink); margin-top:8px; }
+  .stay-cost { text-align:right; flex:none; display:flex; flex-direction:column; justify-content:center; align-items:flex-end; }
+  .stay-price { font-size:22px; font-weight:800; letter-spacing:-.4px; font-variant-numeric:tabular-nums; }
+  .stay-total { color:var(--muted); font-size:12px; }
+  .stars { color:var(--amber); letter-spacing:1px; }
   .trip-cost { text-align:right; }
   .trip-price { font-size:26px; font-weight:800; line-height:1.1; letter-spacing:-.5px; }
   .trip-time { color:var(--muted); font-size:13px; }
@@ -218,6 +237,7 @@
     <nav class="nav">
       <button class="tab act" data-pane="planner">Multi-city</button>
       <button class="tab" data-pane="advisor">Plan my trip</button>
+      <button class="tab" data-pane="stays">Stays</button>
       <button class="tab" data-pane="saved">Saved</button>
     </nav>
     <div class="topbar-right">
@@ -396,6 +416,69 @@
     </div>
   </div>
   </div><!-- /pane-advisor -->
+
+  <div id="pane-stays" class="pane">
+  <div class="wrap">
+    <form id="sform" class="card">
+      <h2>Find a place to stay</h2>
+      <p class="sub">Hotels and vacation rentals near where you're flying — filter by distance, price, and rating. Planned a trip already? Pick a destination below to auto-fill the dates.</p>
+
+      <div id="stay-fromtrip" class="fromtrip"></div>
+
+      <div class="field">
+        <label for="stay-dest">Destination (city or airport)</label>
+        <div class="combo"><input id="stay-dest" aria-label="Destination" placeholder="Type a city or airport code…" autocomplete="off" /><div class="ac-menu"></div></div>
+        <div class="hint">We search hotels in this city and measure distance from its main airport.</div>
+      </div>
+
+      <div class="row">
+        <div class="field"><label for="stay-in">Check-in</label><input id="stay-in" type="date" value="2026-07-15" /></div>
+        <div class="field"><label for="stay-out">Check-out</label><input id="stay-out" type="date" value="2026-07-18" /></div>
+      </div>
+
+      <div class="row-3">
+        <div class="field"><label for="stay-adults">Guests</label><input id="stay-adults" type="number" min="1" value="2" /></div>
+        <div class="field"><label for="stay-cur">Currency</label><input id="stay-cur" value="USD" maxlength="3" /></div>
+        <div class="field"><label for="stay-rating">Min rating</label>
+          <select id="stay-rating"><option value="">Any</option><option value="3">3.0+</option><option value="3.5">3.5+</option><option value="4" selected>4.0+</option><option value="4.5">4.5+</option></select></div>
+      </div>
+
+      <div class="field">
+        <label for="stay-radius">Search radius: <b id="stay-radius-val">15 km</b></label>
+        <input id="stay-radius" type="range" min="1" max="60" value="15" step="1" style="width:100%" />
+        <div class="hint">How far from the airport/city center you're willing to stay.</div>
+      </div>
+
+      <div class="row">
+        <div class="field"><label for="stay-min">Min price / night</label><input id="stay-min" type="number" min="0" placeholder="e.g. 60" /></div>
+        <div class="field"><label for="stay-max">Max price / night</label><input id="stay-max" type="number" min="0" placeholder="e.g. 300" /></div>
+      </div>
+
+      <div class="field inline" style="margin-top:6px">
+        <input type="checkbox" id="stay-rentals" />
+        <label for="stay-rentals">Include vacation rentals (Airbnb-style)</label>
+      </div>
+
+      <div class="field">
+        <label for="stay-source">Source</label>
+        <select id="stay-source">
+          <option value="mock">Demo stays (no key needed)</option>
+          <option value="googlehotels">Google Hotels (live)</option>
+          <option value="airbnb">Airbnb/VRBO (needs a key)</option>
+        </select>
+        <div class="hint" id="stay-hint"></div>
+      </div>
+
+      <div id="stay-keyWarn" style="margin-top:14px"></div>
+      <button type="submit" id="stay-run" class="btn btn-primary">Search stays</button>
+    </form>
+
+    <div class="card" id="stay-results">
+      <div class="results-head"><h2>Places to stay</h2></div>
+      <div class="empty" id="stay-empty">Pick a destination and hit <b>Search stays</b>.</div>
+    </div>
+  </div>
+  </div><!-- /pane-stays -->
 
   <div id="pane-saved" class="pane">
   <div class="wrap" style="grid-template-columns:1fr">

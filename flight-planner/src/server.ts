@@ -38,7 +38,12 @@ import {
 import { SerpApiGoogleFlightsProvider } from './providers/serpapi-google-flights';
 import { TravelpayoutsProvider } from './providers/travelpayouts';
 import { AmadeusProvider } from './providers/amadeus';
-import type { FlightQuote, TripSpec } from './types';
+import { GoogleHotelsProvider } from './providers/google-hotels';
+import { MockStaysProvider } from './providers/mock-stays';
+import { AirbnbRapidApiProvider } from './providers/airbnb-rapidapi';
+import { coordsOf } from './airports';
+import { findStays } from './stays';
+import type { AccommodationProvider, FlightQuote, StayFilters, StayQuery, TripSpec } from './types';
 
 loadEnv();
 
@@ -297,6 +302,58 @@ function makeProvider(kind: string): FlightProvider {
   throw new Error(`Unknown provider "${kind}"`);
 }
 
+// --- Stays (hotels / vacation rentals) --------------------------------------
+/** Accommodation source for the Stays tab. */
+function makeStayProvider(kind: string): AccommodationProvider {
+  if (kind === 'mock') return new MockStaysProvider();
+  if (kind === 'googlehotels') return new GoogleHotelsProvider(requireEnv('SERPAPI_KEY'));
+  if (kind === 'airbnb') {
+    return new AirbnbRapidApiProvider(requireEnv('AIRBNB_RAPIDAPI_KEY'), {
+      host: requireEnv('AIRBNB_RAPIDAPI_HOST'),
+      urlTemplate: process.env.AIRBNB_RAPIDAPI_URL,
+    });
+  }
+  throw new Error(`Unknown stay source "${kind}"`);
+}
+
+/** Validate + coerce the posted stays request into a StayQuery + StayFilters. */
+function toStayRequest(raw: any): { query: StayQuery; filters: StayFilters } {
+  if (!raw || typeof raw !== 'object') throw new Error('Missing stay request');
+  const location = String(raw.location || '').trim();
+  if (!location) throw new Error('A destination (location) is required');
+  const checkIn = String(raw.checkIn || '').trim();
+  const checkOut = String(raw.checkOut || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(checkIn) || !/^\d{4}-\d{2}-\d{2}$/.test(checkOut)) {
+    throw new Error('checkIn and checkOut must be yyyy-mm-dd');
+  }
+  if (checkOut <= checkIn) throw new Error('checkOut must be after checkIn');
+
+  const anchorCode = raw.anchorCode ? String(raw.anchorCode).trim().toUpperCase() : undefined;
+  const anchor = anchorCode ? coordsOf(anchorCode) : undefined;
+  const num = (v: any): number | undefined => (v === '' || v == null || Number.isNaN(Number(v)) ? undefined : Number(v));
+
+  const query: StayQuery = {
+    location,
+    anchorCode,
+    lat: anchor?.[0],
+    lon: anchor?.[1],
+    checkIn,
+    checkOut,
+    adults: Math.max(1, num(raw.adults) ?? 1),
+    currency: (raw.currency && String(raw.currency).trim()) || 'USD',
+    includeVacationRentals: Boolean(raw.includeVacationRentals),
+  };
+  const types = Array.isArray(raw.types) && raw.types.length ? raw.types : undefined;
+  const filters: StayFilters = {
+    radiusKm: num(raw.radiusKm),
+    minPrice: num(raw.minPrice),
+    maxPrice: num(raw.maxPrice),
+    minRating: num(raw.minRating),
+    types,
+  };
+  return { query, filters };
+}
+
 /** Validate + coerce the posted advisor request into an AdvisorSpec. */
 function toAdvisorSpec(raw: any): AdvisorSpec {
   if (!raw || typeof raw !== 'object') throw new Error('Missing trip request');
@@ -399,6 +456,10 @@ const server = createServer(async (req, res) => {
           travelpayouts: Boolean(process.env.TRAVELPAYOUTS_TOKEN),
           amadeus: Boolean(process.env.AMADEUS_CLIENT_ID && process.env.AMADEUS_CLIENT_SECRET),
         },
+        stays: {
+          googlehotels: Boolean(process.env.SERPAPI_KEY),
+          airbnb: Boolean(process.env.AIRBNB_RAPIDAPI_KEY && process.env.AIRBNB_RAPIDAPI_HOST),
+        },
       }));
       return;
     }
@@ -496,6 +557,19 @@ const server = createServer(async (req, res) => {
       }
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ ok: true, provider, spec, result, cityByCode, confidence: confidenceSummary(provider, null) }));
+      return;
+    }
+
+    // "Stays" — hotels & vacation rentals near a destination.
+    if (req.method === 'POST' && path === '/api/stays') {
+      const body = JSON.parse((await readBody(req)) || '{}');
+      const source = String(body.source || 'mock');
+      // Accept either a flat body or { query, filters } — merge so both work.
+      const src = body.query ? { ...body.query, ...(body.filters || {}) } : body;
+      const { query, filters } = toStayRequest(src);
+      const result = await findStays(makeStayProvider(source), query, filters);
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, source, query, filters, ...result }));
       return;
     }
 

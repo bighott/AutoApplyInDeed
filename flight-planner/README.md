@@ -16,7 +16,7 @@ best total price.
 
 ## Web UI
 
-Two tabs:
+Tabs:
 
 - **Multi-city Planner** — you give the stops *in order*; it optimizes dates.
 - **✦ Plan my trip** — you give an *unordered* set of places, a date window, and a
@@ -26,6 +26,12 @@ Two tabs:
   best-value **routes** (e.g. "leave Pittsburgh, Paris → Rome → Berlin, fly home
   into Cleveland"). Enter any origins and any places — the pre-filled values are
   just an editable example.
+- **Stays** — hotels and vacation rentals near a destination, filtered by
+  distance from the airport, price range, and rating. If you just ran a flight
+  search, one-click chips pre-fill each planned stop's city and dates. Sources:
+  **Demo** (offline, no key), **Google Hotels** (live, reuses `SERPAPI_KEY`,
+  includes vacation rentals), and an **Airbnb/VRBO** scaffold (unofficial
+  RapidAPI — needs `AIRBNB_RAPIDAPI_KEY`/`_HOST`; see `.env.example`).
 
 
 ```

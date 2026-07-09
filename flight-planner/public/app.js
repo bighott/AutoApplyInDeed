@@ -106,7 +106,8 @@ function credWarn(v, slotId){
 }
 function updateHint(){ $('providerHint').textContent=HINTS[$('provider').value]; credWarn($('provider').value,'keyWarn'); }
 $('provider').onchange=updateHint;
-fetch('/api/config').then(r=>r.json()).then(c=>{ if(c.providers) CRED=c.providers; updateHint(); aUpdateHint(); }).catch(()=>{});
+let STAY_CRED={ googlehotels:false, airbnb:false };
+fetch('/api/config').then(r=>r.json()).then(c=>{ if(c.providers) CRED=c.providers; if(c.stays) STAY_CRED=c.stays; updateHint(); aUpdateHint(); if(typeof stayUpdateHint==='function') stayUpdateHint(); }).catch(()=>{});
 updateHint();
 
 // ---- submit -----------------------------------------------------------------
@@ -348,11 +349,12 @@ function render(){
 // ============================================================================
 
 // tab switching
-const PANES=['planner','advisor','saved'];
+const PANES=['planner','advisor','stays','saved'];
 function showTab(name){
   document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('act', x.dataset.pane===name));
   PANES.forEach(n=>$('pane-'+n).classList.toggle('act', n===name));
   if(name==='saved') renderSavedList();
+  if(name==='stays') renderTripChips();
 }
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>showTab(t.dataset.pane));
 
@@ -648,3 +650,142 @@ wireExcl('a-excl-pick','a-excl-add','a-excl-list');
 // --- baggage re-render + whole-month search ----------------------------------
 if($('bags')) $('bags').addEventListener('input', ()=>{ if(STATE&&STATE.plan) render(); });
 if($('a-bags')) $('a-bags').addEventListener('input', ()=>{ if(ASTATE&&ASTATE.result) renderAdvisor(); });
+
+// ============================================================================
+// Stays — hotels & vacation rentals near a destination
+// ============================================================================
+let STAY_DEST=null;   // {location, anchorCode} from the autocomplete pick
+let STAY_STATE=null;  // last results payload {stays, nights, ...}
+
+const STAY_HINTS={
+  mock:'Demo listings. Works for any city instantly — great for trying filters, no key or cost.',
+  googlehotels:'Real hotels (and vacation rentals) via Google Hotels, using your SERPAPI_KEY. One billed search per city; including vacation rentals costs one extra.',
+  airbnb:'Airbnb/VRBO via an unofficial RapidAPI source. Needs AIRBNB_RAPIDAPI_KEY + AIRBNB_RAPIDAPI_HOST in .env.' };
+const STAY_NEEDS={ googlehotels:'SERPAPI_KEY', airbnb:'AIRBNB_RAPIDAPI_KEY & AIRBNB_RAPIDAPI_HOST' };
+function stayReady(v){ if(v==='mock') return true; return !!STAY_CRED[v]; }
+function stayUpdateHint(){
+  const v=$('stay-source').value;
+  $('stay-hint').textContent=STAY_HINTS[v]||'';
+  const need=STAY_NEEDS[v];
+  $('stay-keyWarn').innerHTML=(stayReady(v)||!need)?'':`<div class="banner warn">This source needs <b>${need}</b> in <code>flight-planner/.env</code>. Use <b>Demo stays</b> meanwhile.</div>`;
+}
+
+// Destination autocomplete: store city (for the query) + IATA (for the radius anchor).
+attachAutocomplete($('stay-dest'),(a)=>{ STAY_DEST={ location:a.city, anchorCode:a.iata }; });
+$('stay-source').onchange=stayUpdateHint;
+$('stay-radius').addEventListener('input',()=>{ $('stay-radius-val').textContent=`${$('stay-radius').value} km`; });
+stayUpdateHint();
+
+function addDaysStr(d,n){ const t=Date.parse(d+'T00:00:00Z'); if(isNaN(t)) return d; return new Date(t+n*86400000).toISOString().slice(0,10); }
+
+// Derive the places+dates you'd need lodging for, from the last flight search.
+function tripStops(){
+  const out=[];
+  const b=STATE&&STATE.plan&&STATE.plan.best, spec=STATE&&STATE.spec;
+  if(b&&spec&&Array.isArray(spec.stops)){
+    for(let i=0;i<spec.stops.length;i++){
+      const arrive=b.legs[i]&&b.legs[i].date; if(!arrive) continue;
+      const depart=(b.legs[i+1]&&b.legs[i+1].date)||addDaysStr(arrive,(b.nightsPerStop&&b.nightsPerStop[i])||1);
+      const code=spec.stops[i].code;
+      out.push({ code, city:(STATE.cityByCode&&STATE.cityByCode[code])||code, checkIn:arrive, checkOut:depart });
+    }
+    if(out.length) return out;
+  }
+  const ab=ASTATE&&ASTATE.result&&ASTATE.result.best;
+  if(ab&&Array.isArray(ab.order)){
+    for(let i=0;i<ab.order.length;i++){
+      const arrive=ab.legs[i]&&ab.legs[i].date; if(!arrive) continue;
+      const depart=(ab.legs[i+1]&&ab.legs[i+1].date)||addDaysStr(arrive,(ab.nightsPerStop&&ab.nightsPerStop[i])||1);
+      const code=ab.order[i];
+      out.push({ code, city:(ASTATE.cityByCode&&ASTATE.cityByCode[code])||code, checkIn:arrive, checkOut:depart });
+    }
+  }
+  return out;
+}
+function renderTripChips(){
+  const box=$('stay-fromtrip'); const stops=tripStops();
+  if(!stops.length){ box.innerHTML=''; return; }
+  box.innerHTML=`<span class="hint" style="margin:0 4px 0 0">From your last search:</span>`+
+    stops.map((s,i)=>`<button type="button" class="chip" data-i="${i}">${escapeHtml(s.city)} · ${shortDate(s.checkIn)}–${shortDate(s.checkOut)}</button>`).join('');
+  [...box.querySelectorAll('.chip')].forEach(btn=>btn.onclick=()=>{ const s=stops[+btn.dataset.i];
+    $('stay-dest').value=s.code; STAY_DEST={location:s.city, anchorCode:s.code};
+    $('stay-in').value=s.checkIn; $('stay-out').value=s.checkOut; });
+}
+
+function readStaySpec(){
+  const raw=$('stay-dest').value.trim();
+  if(!raw) throw new Error('Enter a destination city or airport.');
+  let location=raw, anchorCode;
+  if(STAY_DEST&&STAY_DEST.anchorCode===raw){ location=STAY_DEST.location; anchorCode=STAY_DEST.anchorCode; }
+  else if(/^[A-Za-z]{3}$/.test(raw)){ anchorCode=raw.toUpperCase(); location=raw.toUpperCase(); }
+  const numOrU=(id)=>{ const v=$(id).value.trim(); return v===''?undefined:Number(v); };
+  const rating=$('stay-rating').value; 
+  return {
+    source:$('stay-source').value,
+    query:{ location, anchorCode, checkIn:$('stay-in').value, checkOut:$('stay-out').value,
+      adults:Math.max(1,Number($('stay-adults').value)||1), currency:$('stay-cur').value.trim()||'USD',
+      includeVacationRentals:$('stay-rentals').checked },
+    filters:{ radiusKm:Number($('stay-radius').value)||undefined, minPrice:numOrU('stay-min'),
+      maxPrice:numOrU('stay-max'), minRating:rating?Number(rating):undefined },
+  };
+}
+
+const staysShow=(h)=>{ $('stay-results').innerHTML=`<div class="results-head"><h2>Places to stay</h2></div>`+h; };
+
+$('sform').addEventListener('submit',async(e)=>{
+  e.preventDefault();
+  let body; try { body=readStaySpec(); } catch(err){ staysShow(`<div class="banner warn">${escapeHtml(err.message)}</div>`); return; }
+  if(!stayReady(body.source)){ staysShow(`<div class="banner warn">That source isn't configured. Pick <b>Demo stays</b>, or add the key to <code>.env</code>.</div>`); return; }
+  const btn=$('stay-run'); btn.disabled=true; btn.textContent='Searching…';
+  staysShow(`<div class="empty">Searching stays…</div>`);
+  try {
+    const r=await fetch('/api/stays',{ method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(body) });
+    const data=await r.json();
+    if(!data.ok) throw new Error(data.error||'Search failed');
+    STAY_STATE={ ...data, sort:'value' }; renderStays();
+  } catch(err){ staysShow(`<div class="banner warn">${escapeHtml(err.message||'Search failed')}</div>`); }
+  finally { btn.disabled=false; btn.textContent='Search stays'; }
+});
+
+function starStr(r){ if(r==null) return '<span class="stay-sub">No rating</span>';
+  const full=Math.round(r); return `<span class="stars">${'★'.repeat(full)}${'☆'.repeat(Math.max(0,5-full))}</span> <b>${r.toFixed(1)}</b>`; }
+
+function staySort(list, sort){
+  const arr=[...list];
+  const byPrice=(a,b)=>(a.pricePerNight==null?1e9:a.pricePerNight)-(b.pricePerNight==null?1e9:b.pricePerNight);
+  const maxP=arr.reduce((m,s)=>Math.max(m,s.pricePerNight||0),0)||1;
+  const val=s=>((s.rating||0)/5)*0.7+(1-((s.pricePerNight||maxP)/maxP))*0.3;
+  if(sort==='price') arr.sort(byPrice);
+  else if(sort==='rating') arr.sort((a,b)=>(b.rating||0)-(a.rating||0)||byPrice(a,b));
+  else if(sort==='distance') arr.sort((a,b)=>(a.distanceKm==null?1e9:a.distanceKm)-(b.distanceKm==null?1e9:b.distanceKm));
+  else arr.sort((a,b)=>val(b)-val(a));
+  return arr;
+}
+function stayCard(s,cur){
+  const price=s.pricePerNight!=null?money(s.pricePerNight,s.currency||cur):'—';
+  const total=s.totalPrice!=null?`${money(s.totalPrice,s.currency||cur)} total`:'';
+  const dist=s.distanceKm!=null?`${s.distanceKm} km from airport`:'';
+  const rev=s.reviews!=null?` · ${s.reviews.toLocaleString()} reviews`:'';
+  const thumb=s.thumbnail?`<img class="stay-thumb" src="${s.thumbnail}" alt="" loading="lazy" />`:`<div class="stay-thumb ph">${s.type==='vacation_rental'?'🏠':'🏨'}</div>`;
+  const tag=s.type==='vacation_rental'?`<span class="stay-tag rental">Vacation rental</span>`:`<span class="stay-tag">Hotel</span>`;
+  const book=s.bookingUrl?`<a href="${s.bookingUrl}" target="_blank" rel="noopener" class="mini" style="margin-top:6px">View / book ↗</a>`:'';
+  const amen=(s.amenities||[]).slice(0,4).map(a=>`<span class="stay-tag">${escapeHtml(a)}</span>`).join('');
+  return `<div class="stay-card">${thumb}<div class="stay-body">
+    <div class="stay-name">${escapeHtml(s.name)}</div>
+    <div class="stay-sub">${escapeHtml([dist,s.address].filter(Boolean).join(' · '))}</div>
+    <div class="stay-rate">${starStr(s.rating)}${rev}</div>
+    <div class="stay-tags">${tag}${amen}</div>
+  </div><div class="stay-cost"><div class="stay-price">${price}</div><div class="stay-sub">/night</div><div class="stay-total">${total}</div>${book}</div></div>`;
+}
+function renderStays(){
+  const d=STAY_STATE; if(!d) return;
+  const cur=(d.query&&d.query.currency)||'USD';
+  if(!d.stays.length){ staysShow(`<div class="banner warn">No places matched. The source returned ${d.found||0} result${d.found===1?'':'s'} — try a wider radius, a higher max price, or a lower min rating.</div>`); return; }
+  const sorted=staySort(d.stays, d.sort||'value');
+  const seg=(k,lab)=>`<button class="${(d.sort||'value')===k?'act':''}" data-ssort="${k}">${lab}</button>`;
+  let html=`<div class="stay-toolbar"><span class="lbl">Sort by</span><div class="seg">${seg('value','Best value')}${seg('price','Cheapest')}${seg('rating','Top rated')}${seg('distance','Closest')}</div>`+
+    `<span class="lbl" style="margin-left:auto">${d.kept} place${d.kept===1?'':'s'} · ${d.nights} night${d.nights===1?'':'s'}</span></div>`;
+  html+=sorted.map(s=>stayCard(s,cur)).join('');
+  staysShow(html);
+  document.querySelectorAll('#stay-results .seg button').forEach(b=>b.onclick=()=>{ STAY_STATE.sort=b.dataset.ssort; renderStays(); });
+}
