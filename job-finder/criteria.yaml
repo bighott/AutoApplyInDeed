@@ -7,26 +7,41 @@
 profile:
   # Target titles → become scraper keywords AND the "seniority/skills" anchor
   # for scoring. Scoring ALSO reads your resume in resume/, so these are a
-  # starting net, not the whole story.
+  # starting net, not the whole story. Tuned to your background:
+  # marketing/systems operations, AI automation, paid media/growth, web dev,
+  # and founder/product experience.
   titles:
-    - Social Media Manager
-    - Content Creator
-    - UGC Creator
-    - Creative Strategist
-    - Community Manager
-    - Engineering Manager
-    - Business Development
-    - Project Manager
+    - Marketing Operations Manager
     - Marketing Manager
+    - Growth Marketing Manager
+    - Digital Marketing Manager
+    - Performance Marketing Manager
+    - Paid Media Manager
+    - Marketing Automation Manager
+    - Operations Manager
+    - Social Media Manager
+    - Content Marketing Manager
+    - Creative Strategist
+    - Web Developer
+    - Business Development Manager
+    - Product Manager
 
   # Extra free-text interests folded into keyword search + scoring context.
   keywords_extra:
+    - marketing operations
+    - AI automation
+    - paid media
+    - growth
     - social media
     - UGC
-    - creative
     - content
-    - brand
-    - growth
+    - SEO
+    - marketing automation
+    - Zapier
+    - n8n
+    - HubSpot
+    - Shopify
+    - WordPress
 
   # Where you'll work. remote_only=true keeps the digest to remote roles.
   locations:
@@ -81,7 +96,7 @@ sources:
     publishedAt: past-24h
     # Enum spellings below are what LinkedIn uses on-site. If the actor rejects
     # a value, adjust the wording here — they pass straight through.
-    experienceLevel: [Mid-Senior level, Director]
+    experienceLevel: [Associate, Mid-Senior level]
     workType: [Remote]
     jobType: [Full-time, Contract]
     filterUnder10Applicants: true          # surface low-competition gems (🔥)
@@ -104,7 +119,7 @@ sources:
     hasSalary: false
     timeRange: "24h"
     aiWorkArrangementFilter: [Remote]      # ai-derived work arrangement
-    aiExperienceLevelFilter: [Mid, Senior]
+    aiExperienceLevelFilter: [Entry, Mid, Senior]
 
 # ============================================================================
 #  Budget guardrail — Apify FREE tier gives ~$5/month of credit.
