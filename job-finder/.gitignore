@@ -1,0 +1,19 @@
+# Secrets — NEVER commit
+.env
+
+# Local database
+jobs.db
+jobs.db-shm
+jobs.db-wal
+
+# Generated digests (keep the folder, ignore output)
+digest/*.html
+digest/latest.md
+
+# Resume files are personal — ignore everything except the placeholder README
+resume/*
+!resume/README.md
+
+# Node
+node_modules/
+npm-debug.log*

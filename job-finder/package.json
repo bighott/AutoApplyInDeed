@@ -1,0 +1,25 @@
+{
+  "name": "job-finder",
+  "version": "1.0.0",
+  "description": "Automated job finder: scrapes LinkedIn/Indeed/ATS via Apify, dedupes, scores against your resume with Claude, and produces a ranked daily digest. No auto-apply.",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "find": "node bin/find.js",
+    "mark": "node bin/mark.js",
+    "stats": "node bin/stats.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "apify-client": "^2.9.3",
+    "better-sqlite3": "^11.8.1",
+    "dotenv": "^16.4.7",
+    "js-yaml": "^4.1.0"
+  },
+  "optionalDependencies": {
+    "pdf-parse": "^1.1.1"
+  },
+  "license": "MIT"
+}

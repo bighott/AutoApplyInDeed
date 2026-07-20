@@ -1,0 +1,126 @@
+# ============================================================================
+#  Job Finder — search & scoring criteria
+#  Edit this file to tune what gets scraped and how jobs are scored.
+#  Seeded from your intake answers (2026-07-20). Tweak anything freely.
+# ============================================================================
+
+profile:
+  # Target titles → become scraper keywords AND the "seniority/skills" anchor
+  # for scoring. Scoring ALSO reads your resume in resume/, so these are a
+  # starting net, not the whole story.
+  titles:
+    - Social Media Manager
+    - Content Creator
+    - UGC Creator
+    - Creative Strategist
+    - Community Manager
+    - Engineering Manager
+    - Business Development
+    - Project Manager
+    - Marketing Manager
+
+  # Extra free-text interests folded into keyword search + scoring context.
+  keywords_extra:
+    - social media
+    - UGC
+    - creative
+    - content
+    - brand
+    - growth
+
+  # Where you'll work. remote_only=true keeps the digest to remote roles.
+  locations:
+    - Remote
+    - United States
+  remote_only: true
+  countries: [us]          # ISO country code(s) for the Indeed scraper
+
+  salary_floor: 80000      # USD/year base. Jobs below score lower on salary fit.
+  currency: USD
+
+  # Seniority band for scoring "seniority fit" (free text, matched loosely).
+  seniority: [mid, senior, lead, manager]
+
+  # Hard dealbreakers — jobs matching these are auto-marked `skipped` (never
+  # surfaced) and also flagged as red flags if they slip through.
+  dealbreakers:
+    - on-site required
+    - relocation required
+    - unpaid
+    - equity-only
+    - security clearance
+    - clearance required
+
+  # Never show jobs from these companies (exact-ish, case-insensitive contains).
+  exclude_companies: []
+
+  # Never show jobs whose title contains any of these (case-insensitive).
+  exclude_titles:
+    - intern
+    - internship
+    - unpaid
+
+scoring:
+  # auto  → use Anthropic API if ANTHROPIC_API_KEY is set, else `claude -p`
+  # anthropic → force Anthropic API   |   claude-cli → force headless `claude -p`
+  provider: auto
+  model: claude-sonnet-5   # used only for the Anthropic API path
+  batch_size: 15           # jobs per Claude call (10–20 recommended)
+  min_digest_score: 60     # jobs below this never reach the digest
+
+# ============================================================================
+#  Apify sources — actor IDs are verified (July 2026). Do not change IDs unless
+#  Apify tells you they changed.
+# ============================================================================
+sources:
+  linkedin:
+    enabled: true
+    actor_id: 2rJKkhh7vjpX7pvjg          # cheap_scraper/linkedin-job-scraper
+    cadence: daily
+    max_results: 150                      # cost cap — see budget section
+    publishedAt: past-24h
+    # Enum spellings below are what LinkedIn uses on-site. If the actor rejects
+    # a value, adjust the wording here — they pass straight through.
+    experienceLevel: [Mid-Senior level, Director]
+    workType: [Remote]
+    jobType: [Full-time, Contract]
+    filterUnder10Applicants: true          # surface low-competition gems (🔥)
+
+  indeed:
+    enabled: true
+    actor_id: TrtlecxAsNRbKl1na           # valig/indeed-jobs-scraper
+    cadence: daily
+    limit: 200
+    datePosted: "1"                        # last 1 day
+    # Indeed takes a single title/query string. Defaults to the first title
+    # above; set `query` to override with a boolean search if you like.
+    query: ""
+
+  ats:
+    enabled: true
+    actor_id: s3dtSTZSZWFtAVLn5           # fantastic-jobs/career-site-job-listing-api
+    cadence: [mon, thu]                    # priciest actor — run 2–3×/week only
+    limit: 40                              # keep tight (<=40)
+    hasSalary: false
+    timeRange: "24h"
+    aiWorkArrangementFilter: [Remote]      # ai-derived work arrangement
+    aiExperienceLevelFilter: [Mid, Senior]
+
+# ============================================================================
+#  Budget guardrail — Apify FREE tier gives ~$5/month of credit.
+#  A run is REFUSED if (month-to-date spend + this run's estimate) > max.
+# ============================================================================
+budget:
+  max_monthly_spend: 4.50   # USD. Leaves headroom under the $5 free credit.
+  pricing:                  # $ per unit — matches July 2026 actor pricing
+    linkedin: { per_result: 0.0007, per_start: 0.005 }
+    indeed:   { per_result: 0.0001, per_start: 0.000 }
+    ats:      { per_result: 0.012,  per_start: 0.010 }
+
+# ============================================================================
+#  Scheduling — documented only. `npm run find` runs the whole pipeline.
+#  The installer will ASK before touching your crontab.
+# ============================================================================
+cron:
+  schedule: "0 7 * * 1-5"       # 7:00 AM, weekdays
+  timezone: America/New_York
