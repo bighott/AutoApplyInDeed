@@ -1,0 +1,21 @@
+{
+  "_note": "Pull-rate heuristics by rarity tier. No public API exposes real pull rates, so we approximate `packsPerRarityHit` (packs you open per hit of ANY card in that rarity slot) from community-reported averages for modern Scarlet & Violet-era English sets. Override per-set when you have better numbers. `chaseCardsInTier` is derived at runtime by counting cards of the same rarity in the set.",
+  "byRarity": {
+    "Common": 1,
+    "Uncommon": 1,
+    "Rare": 3,
+    "Double Rare": 5,
+    "Rare Holo": 4,
+    "Rare Holo ex": 5,
+    "Ultra Rare": 12,
+    "Rare Ultra": 12,
+    "Illustration Rare": 12,
+    "Rare Secret": 30,
+    "Special Illustration Rare": 34,
+    "Hyper Rare": 45,
+    "Rare Rainbow": 45,
+    "Black White Rare": 60,
+    "default": 20
+  },
+  "packPriceUSD": 4.5
+}

@@ -1,0 +1,14 @@
+{
+  "name": "pokemon-pricing-model",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Two-factor (pull cost + desirability) log-linear pricing model for modern Pokémon chase cards, flagging over/undervalued cards.",
+  "scripts": {
+    "report": "node src/report.mjs",
+    "dashboard": "node src/buildDashboard.mjs",
+    "ingest": "node src/ingest.mjs",
+    "demo": "node src/ingest.mjs \"Charizard ex\" --number 223 --set \"Obsidian Flames\" --source fixture",
+    "test": "node --test"
+  }
+}

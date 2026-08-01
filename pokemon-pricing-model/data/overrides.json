@@ -1,0 +1,7 @@
+{
+  "_note": "Per-card manual overrides keyed by card id (`<setId>-<number>` from the source, or any id you assign). `artworkHype` (1..10) is inherently subjective and cannot be scraped — set it here; otherwise a rarity-based default is used. `googleTrends` (1..10) and any other model input can also be overridden. Example entries below mirror the video's judgement calls.",
+  "byId": {
+    "sv3pt5-199": { "artworkHype": 8.5, "note": "151 Charizard SIR" },
+    "sv3-223": { "artworkHype": 6, "note": "Obsidian Flames Charizard SIR — divisive art" }
+  }
+}

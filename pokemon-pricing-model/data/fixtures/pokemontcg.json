@@ -1,0 +1,53 @@
+{
+  "_note": "Offline fixture in pokemontcg.io API shape, so the ingestion pipeline (and the pokemontcg parser) can be exercised with no network. Prices are illustrative.",
+  "cards": [
+    {
+      "id": "sv3-223", "name": "Charizard ex", "number": "223", "rarity": "Special Illustration Rare",
+      "set": { "id": "sv3", "name": "Obsidian Flames", "releaseDate": "2023/08/11", "printedTotal": 197 },
+      "images": { "small": "https://images.pokemontcg.io/sv3/223.png" },
+      "tcgplayer": { "prices": { "holofoil": { "market": 70.0, "mid": 72.0 } } }
+    },
+    {
+      "id": "sv3-125", "name": "Charizard ex", "number": "125", "rarity": "Double Rare",
+      "set": { "id": "sv3", "name": "Obsidian Flames", "releaseDate": "2023/08/11", "printedTotal": 197 },
+      "images": { "small": "https://images.pokemontcg.io/sv3/125.png" },
+      "tcgplayer": { "prices": { "holofoil": { "market": 9.5 } } }
+    },
+    {
+      "id": "sv3-215", "name": "Pidgeot ex", "number": "215", "rarity": "Special Illustration Rare",
+      "set": { "id": "sv3", "name": "Obsidian Flames", "releaseDate": "2023/08/11", "printedTotal": 197 },
+      "images": { "small": "https://images.pokemontcg.io/sv3/215.png" },
+      "tcgplayer": { "prices": { "holofoil": { "market": 28.0 } } }
+    },
+    {
+      "id": "sv3-207", "name": "Tyranitar ex", "number": "207", "rarity": "Ultra Rare",
+      "set": { "id": "sv3", "name": "Obsidian Flames", "releaseDate": "2023/08/11", "printedTotal": 197 },
+      "images": { "small": "https://images.pokemontcg.io/sv3/207.png" },
+      "tcgplayer": { "prices": { "holofoil": { "market": 6.0 } } }
+    },
+    {
+      "id": "sv3-230", "name": "Charizard ex", "number": "230", "rarity": "Hyper Rare",
+      "set": { "id": "sv3", "name": "Obsidian Flames", "releaseDate": "2023/08/11", "printedTotal": 197 },
+      "images": { "small": "https://images.pokemontcg.io/sv3/230.png" },
+      "tcgplayer": { "prices": { "holofoil": { "market": 90.0 } } }
+    },
+    {
+      "id": "sv3pt5-199", "name": "Charizard ex", "number": "199", "rarity": "Special Illustration Rare",
+      "set": { "id": "sv3pt5", "name": "Pokémon 151", "releaseDate": "2023/09/22", "printedTotal": 165 },
+      "images": { "small": "https://images.pokemontcg.io/sv3pt5/199.png" },
+      "tcgplayer": { "prices": { "holofoil": { "market": 376.0 } } }
+    },
+    {
+      "id": "sv3pt5-205", "name": "Mew ex", "number": "205", "rarity": "Special Illustration Rare",
+      "set": { "id": "sv3pt5", "name": "Pokémon 151", "releaseDate": "2023/09/22", "printedTotal": 165 },
+      "images": { "small": "https://images.pokemontcg.io/sv3pt5/205.png" },
+      "tcgplayer": { "prices": { "holofoil": { "market": 327.0 } } }
+    },
+    {
+      "id": "base1-4", "name": "Charizard", "number": "4", "rarity": "Rare Holo",
+      "set": { "id": "base1", "name": "Base", "releaseDate": "1999/01/09", "printedTotal": 102 },
+      "images": { "small": "https://images.pokemontcg.io/base1/4.png" },
+      "tcgplayer": { "prices": { "holofoil": { "market": 320.0 } } }
+    }
+  ]
+}
