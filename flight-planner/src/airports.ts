@@ -48,7 +48,13 @@ const RAW: Array<[string, string, string, string]> = [
   ["SAN", "San Diego", "San Diego Intl", "USA"],
   ["TPA", "Tampa", "Tampa Intl", "USA"],
   ["PDX", "Portland", "Portland Intl", "USA"],
-  ["HNL", "Honolulu", "Daniel K. Inouye Intl", "USA"],
+  ["HNL", "Honolulu", "Daniel K. Inouye Intl — Oahu, Hawaii", "USA"],
+  ["OGG", "Kahului", "Kahului — Maui, Hawaii", "USA"],
+  ["KOA", "Kailua-Kona", "Ellison Onizuka Kona Intl — Big Island, Hawaii", "USA"],
+  ["LIH", "Lihue", "Lihue — Kauai, Hawaii", "USA"],
+  ["ITO", "Hilo", "Hilo Intl — Big Island, Hawaii", "USA"],
+  ["MKK", "Molokai", "Molokai (Hoolehua) — Hawaii", "USA"],
+  ["LNY", "Lanai", "Lanai City — Lanai, Hawaii", "USA"],
   ["AUS", "Austin", "Austin–Bergstrom Intl", "USA"],
   ["MDW", "Chicago", "Chicago Midway", "USA"],
   ["BNA", "Nashville", "Nashville Intl", "USA"],
@@ -343,6 +349,7 @@ const COORDS: Record<string, [number, number]> = {
   TAS:[41.26,69.28],ALA:[43.35,77.04],SYD:[-33.95,151.18],MEL:[-37.67,144.84],BNE:[-27.38,153.12],
   PER:[-31.94,115.97],ADL:[-34.95,138.53],OOL:[-28.16,153.50],CNS:[-16.89,145.75],AKL:[-37.01,174.79],
   CHC:[-43.49,172.53],WLG:[-41.33,174.81],NAN:[-17.76,177.44],PPT:[-17.56,-149.61],GUM:[13.48,144.80],
+  OGG:[20.90,-156.43],KOA:[19.74,-156.05],LIH:[21.98,-159.34],ITO:[19.72,-155.05],MKK:[21.15,-157.10],LNY:[20.79,-156.95],
 };
 
 /** Approximate [lat, lon] for an IATA code, or undefined if unknown. */
