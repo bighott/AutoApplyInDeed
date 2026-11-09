@@ -43,6 +43,7 @@ import { MockStaysProvider } from './providers/mock-stays';
 import { AirbnbRapidApiProvider } from './providers/airbnb-rapidapi';
 import { coordsOf } from './airports';
 import { findStays } from './stays';
+import { findOneWay, oneWayLegQueries, type OneWaySpec } from './oneway';
 import type { AccommodationProvider, FlightQuote, StayFilters, StayQuery, TripSpec } from './types';
 
 loadEnv();
@@ -302,6 +303,36 @@ function makeProvider(kind: string): FlightProvider {
   throw new Error(`Unknown provider "${kind}"`);
 }
 
+// --- One-way finder ---------------------------------------------------------
+/** Validate + coerce the posted one-way request into an OneWaySpec. */
+function toOneWaySpec(raw: any): OneWaySpec {
+  if (!raw || typeof raw !== 'object') throw new Error('Missing one-way request');
+  const rawOrigins: unknown[] = Array.isArray(raw.origins) ? raw.origins : [];
+  const origins: string[] = rawOrigins
+    .map((o) => String(o || '').trim().toUpperCase())
+    .filter((s): s is string => Boolean(s));
+  if (origins.length === 0) throw new Error('Add at least one origin airport');
+  const destination = String(raw.destination || '').trim().toUpperCase();
+  if (!destination) throw new Error('A destination airport is required');
+  const date = String(raw.date || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('A departure date (yyyy-mm-dd) is required');
+  const flexDays = Math.min(5, Math.max(0, Number(raw.flexDays) || 0));
+  const rawExclude: unknown[] = Array.isArray(raw.excludeAirlines) ? raw.excludeAirlines : [];
+  const excludeAirlines = rawExclude.length
+    ? rawExclude.map((c) => String(c).trim().toUpperCase()).filter((s): s is string => Boolean(s))
+    : undefined;
+  return {
+    origins: [...new Set(origins)],
+    destination,
+    date,
+    flexDays,
+    adults: Math.max(1, Number(raw.adults) || 1),
+    cabin: String(raw.cabin || 'ECONOMY'),
+    currency: (raw.currency && String(raw.currency).trim()) || 'USD',
+    excludeAirlines,
+  };
+}
+
 // --- Stays (hotels / vacation rentals) --------------------------------------
 /** Accommodation source for the Stays tab. */
 function makeStayProvider(kind: string): AccommodationProvider {
@@ -557,6 +588,28 @@ const server = createServer(async (req, res) => {
       }
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ ok: true, provider, spec, result, cityByCode, confidence: confidenceSummary(provider, null) }));
+      return;
+    }
+
+    // "One-way" — cheapest one-way from each of several origins to one destination.
+    if (req.method === 'POST' && path === '/api/oneway') {
+      const body = JSON.parse((await readBody(req)) || '{}');
+      const spec = toOneWaySpec(body.spec);
+      const providerKind = String(body.provider || 'mock');
+      const provider = makeProvider(providerKind);
+      const opts = { adults: spec.adults, cabin: spec.cabin, currency: spec.currency || 'USD', excludeAirlines: spec.excludeAirlines };
+      if (BILLED.has(providerKind)) {
+        const billable = provider.countBillable?.(oneWayLegQueries(spec), opts) ?? oneWayLegQueries(spec).length;
+        if (billable > MAX_SEARCHES) throw budgetError(billable, MAX_SEARCHES);
+      }
+      const result = await findOneWay(provider, spec);
+      const cityByCode: Record<string, string> = {};
+      for (const code of [...spec.origins, spec.destination]) {
+        const city = cityOf(code);
+        if (city) cityByCode[code] = city;
+      }
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, provider: providerKind, spec, result, cityByCode, confidence: confidenceSummary(providerKind, null) }));
       return;
     }
 

@@ -162,6 +162,12 @@
   .conf-dot.conf-live { background:#16a34a; }
   .conf-dot.conf-cached { background:var(--brand); }
   .conf-dot.conf-est { background:var(--amber); }
+  /* One-way */
+  .ow-item { border:1px solid var(--line); border-radius:14px; padding:10px 14px 4px; margin-bottom:12px; }
+  .ow-head { display:flex; align-items:center; gap:10px; }
+  .ow-route { font-weight:700; color:var(--ink); }
+  .ow-price { margin-left:auto; font-size:20px; font-weight:800; letter-spacing:-.4px; font-variant-numeric:tabular-nums; }
+  .ow-rank { font-size:12px; font-weight:700; color:var(--muted); background:var(--brand-soft); border-radius:999px; padding:2px 9px; }
   /* Stays */
   .fromtrip { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
   .fromtrip .chip { background:var(--brand-soft); color:var(--brand-d); border:0; border-radius:999px; padding:6px 12px; font:inherit; font-size:13px; font-weight:600; cursor:pointer; }
@@ -236,6 +242,7 @@
     </div>
     <nav class="nav">
       <button class="tab act" data-pane="planner">Multi-city</button>
+      <button class="tab" data-pane="oneway">One-way</button>
       <button class="tab" data-pane="advisor">Plan my trip</button>
       <button class="tab" data-pane="stays">Stays</button>
       <button class="tab" data-pane="saved">Saved</button>
@@ -321,6 +328,71 @@
     </div>
   </div>
   </div><!-- /pane-planner -->
+
+  <div id="pane-oneway" class="pane">
+  <div class="wrap">
+    <form id="owform" class="card">
+      <h2>One-way flights</h2>
+      <p class="sub">Compare the cheapest one-way fare from several departure airports to a single destination. No return, no overnight stays — just the best way out.</p>
+
+      <div class="field">
+        <label>From — origin airport(s)</label>
+        <div id="ow-origins"></div>
+        <button type="button" id="ow-addOrigin" class="btn btn-ghost">+ Add origin</button>
+        <div class="hint">Add every airport you could leave from — we price each and rank them cheapest-first.</div>
+      </div>
+
+      <div class="field">
+        <label for="ow-dest">To — destination airport</label>
+        <div class="combo"><input id="ow-dest" aria-label="Destination airport" placeholder="City or airport code…" autocomplete="off" /><div class="ac-menu"></div></div>
+      </div>
+
+      <div class="row">
+        <div class="field"><label for="ow-date">Departure date</label><input id="ow-date" type="date" /></div>
+        <div class="field"><label for="ow-flex">Flexible days (+)</label>
+          <select id="ow-flex"><option value="0">Exact date only</option><option value="1">+1 day</option><option value="2">+2 days</option><option value="3">+3 days</option><option value="5">+5 days</option></select>
+          <div class="hint">Also checks the next few days and keeps the cheapest.</div></div>
+      </div>
+
+      <div class="row-3">
+        <div class="field"><label for="ow-adults">Adults</label><input id="ow-adults" type="number" min="1" value="1" /></div>
+        <div class="field"><label for="ow-cabin">Cabin</label>
+          <select id="ow-cabin"><option value="ECONOMY">Economy</option><option value="PREMIUMECONOMY">Premium Economy</option><option value="BUSINESS">Business</option><option value="FIRST">First</option></select></div>
+        <div class="field"><label for="ow-cur">Currency</label><input id="ow-cur" value="USD" maxlength="3" /></div>
+      </div>
+
+      <div class="field">
+        <label for="ow-excl-pick">Avoid airlines (optional)</label>
+        <div class="inline" style="gap:8px">
+          <select id="ow-excl-pick" style="flex:1"></select>
+          <button type="button" id="ow-excl-add" class="mini">Add</button>
+        </div>
+        <div id="ow-excl-list" class="chips"></div>
+      </div>
+
+      <div class="field">
+        <label for="ow-provider">Price source</label>
+        <select id="ow-provider">
+          <option value="mock">Demo prices (no key needed)</option>
+          <option value="serpapi">Google Flights (live)</option>
+          <option value="travelpayouts">Travelpayouts (free, real prices)</option>
+          <option value="amadeus">Amadeus (free tier)</option>
+          <option value="expedia">Expedia (snapshot, free)</option>
+          <option value="crosscheck">Cross-check (all sources, cheapest)</option>
+        </select>
+        <div class="hint" id="ow-providerHint"></div>
+      </div>
+
+      <div id="ow-keyWarn" style="margin-top:14px"></div>
+      <button type="submit" id="ow-run" class="btn btn-primary">Find one-way flights</button>
+    </form>
+
+    <div class="card" id="ow-results">
+      <div class="results-head"><h2>Results</h2></div>
+      <div class="empty" id="ow-empty">Pick your origins and destination, then hit <b>Find one-way flights</b>.</div>
+    </div>
+  </div>
+  </div><!-- /pane-oneway -->
 
   <div id="pane-advisor" class="pane">
   <div class="wrap">

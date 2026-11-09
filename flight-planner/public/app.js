@@ -107,7 +107,7 @@ function credWarn(v, slotId){
 function updateHint(){ $('providerHint').textContent=HINTS[$('provider').value]; credWarn($('provider').value,'keyWarn'); }
 $('provider').onchange=updateHint;
 let STAY_CRED={ googlehotels:false, airbnb:false };
-fetch('/api/config').then(r=>r.json()).then(c=>{ if(c.providers) CRED=c.providers; if(c.stays) STAY_CRED=c.stays; updateHint(); aUpdateHint(); if(typeof stayUpdateHint==='function') stayUpdateHint(); }).catch(()=>{});
+fetch('/api/config').then(r=>r.json()).then(c=>{ if(c.providers) CRED=c.providers; if(c.stays) STAY_CRED=c.stays; updateHint(); aUpdateHint(); if(typeof stayUpdateHint==='function') stayUpdateHint(); if(typeof owUpdateHint==='function') owUpdateHint(); }).catch(()=>{});
 updateHint();
 
 // ---- submit -----------------------------------------------------------------
@@ -349,7 +349,7 @@ function render(){
 // ============================================================================
 
 // tab switching
-const PANES=['planner','advisor','stays','saved'];
+const PANES=['planner','oneway','advisor','stays','saved'];
 function showTab(name){
   document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('act', x.dataset.pane===name));
   PANES.forEach(n=>$('pane-'+n).classList.toggle('act', n===name));
@@ -788,4 +788,75 @@ function renderStays(){
   html+=sorted.map(s=>stayCard(s,cur)).join('');
   staysShow(html);
   document.querySelectorAll('#stay-results .seg button').forEach(b=>b.onclick=()=>{ STAY_STATE.sort=b.dataset.ssort; renderStays(); });
+}
+
+// ============================================================================
+// One-way — cheapest one-way from several origins to one destination
+// ============================================================================
+let OW_STATE=null;
+function addOWOrigin(code=''){
+  const el=document.createElement('div'); el.className='origin-row';
+  el.innerHTML=`<div class="combo"><input class="ow-o-code" aria-label="Origin airport code" value="${code}" placeholder="Type a city or airport code…" autocomplete="off" /><div class="ac-menu"></div></div>
+    <button type="button" class="xbtn" title="Remove origin" aria-label="Remove origin">✕</button>`;
+  el.querySelector('.xbtn').onclick=()=>{ if(document.querySelectorAll('#ow-origins .origin-row').length>1) el.remove(); };
+  $('ow-origins').appendChild(el); attachAutocomplete(el.querySelector('.ow-o-code'));
+}
+$('ow-addOrigin').onclick=()=>addOWOrigin();
+addOWOrigin('CLE'); addOWOrigin('PIT');
+attachAutocomplete($('ow-dest'));
+wireExcl('ow-excl-pick','ow-excl-add','ow-excl-list');
+// default to a safely-future date (~30 days out)
+(()=>{ const d=new Date(Date.now()+30*86400000); $('ow-date').value=d.toISOString().slice(0,10); })();
+function owUpdateHint(){ $('ow-providerHint').textContent=HINTS[$('ow-provider').value]||''; credWarn($('ow-provider').value,'ow-keyWarn'); }
+$('ow-provider').onchange=owUpdateHint; owUpdateHint();
+
+function readOneWaySpec(){
+  const origins=[...document.querySelectorAll('#ow-origins .ow-o-code')].map(i=>i.value.trim().toUpperCase()).filter(Boolean);
+  if(!origins.length) throw new Error('Add at least one origin airport.');
+  const destination=$('ow-dest').value.trim().toUpperCase();
+  if(!destination) throw new Error('Enter a destination airport.');
+  const date=$('ow-date').value;
+  if(!date) throw new Error('Pick a departure date.');
+  return {
+    provider:$('ow-provider').value,
+    spec:{ origins, destination, date, flexDays:Number($('ow-flex').value)||0,
+      adults:Math.max(1,Number($('ow-adults').value)||1), cabin:$('ow-cabin').value,
+      currency:$('ow-cur').value.trim()||'USD', excludeAirlines:readExcl('ow-excl-list') },
+  };
+}
+const owShow=(h)=>{ $('ow-results').innerHTML=`<div class="results-head"><h2>Results</h2></div>`+h; };
+
+$('owform').addEventListener('submit',async(e)=>{
+  e.preventDefault();
+  let body; try { body=readOneWaySpec(); } catch(err){ owShow(`<div class="banner warn">${escapeHtml(err.message)}</div>`); return; }
+  if(!providerReady(body.provider)){ owShow(`<div class="banner warn">That source needs a key. Pick <b>Demo prices</b>, or add the key to <code>.env</code>.</div>`); return; }
+  const btn=$('ow-run'); btn.disabled=true; btn.textContent='Searching…';
+  owShow(`<div class="empty">Pricing one-way fares…</div>`);
+  try {
+    const r=await fetch('/api/oneway',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+    const data=await r.json();
+    if(!data.ok) throw new Error(data.error||'Search failed');
+    OW_STATE=data; renderOneWay();
+  } catch(err){ owShow(`<div class="banner warn">${escapeHtml(err.message||'Search failed')}</div>`); }
+  finally { btn.disabled=false; btn.textContent='Find one-way flights'; }
+});
+
+function renderOneWay(){
+  const d=OW_STATE; if(!d) return;
+  const spec=d.spec, res=d.result, cur=res.currency||'USD';
+  const dest=spec.destination, city=(d.cityByCode&&d.cityByCode[dest])||dest;
+  if(!res.options.length){
+    owShow(`<div class="banner warn">No fares came back for ${escapeHtml(city)} on this source. Try <b>Demo</b> or <b>Google Flights</b>, add a flex day or two, or shift the date.</div>`);
+    return;
+  }
+  let html=`<div class="toolbar"><span class="lbl">Cheapest one-way to <b>${escapeHtml(city)} (${dest})</b></span>`+
+    `<span class="lbl" style="margin-left:auto">${res.options.length} origin${res.options.length===1?'':'s'} priced · ${res.queriesRun} searches</span></div>`;
+  html+=confBadgeHtml(d.confidence);
+  html+=res.options.map((o,i)=>{
+    const badge=i===0?`<span class="badge cheap">Cheapest</span>`:`<span class="ow-rank">#${i+1}</span>`;
+    return `<div class="ow-item"><div class="ow-head">${badge}<span class="ow-route">${o.origin} → ${dest}</span><span class="ow-price">${money(o.quote.price,o.quote.currency||cur)}</span></div>${legRow({origin:o.origin,destination:dest,date:o.date,quote:o.quote})}</div>`;
+  }).join('');
+  if(res.unpriced&&res.unpriced.length) html+=`<div class="hint" style="margin-top:10px">No fare from: ${res.unpriced.join(', ')} — try Demo/Google Flights or a different date.</div>`;
+  owShow(html);
+  wireLogoFallbacks($('ow-results'));
 }
