@@ -22,6 +22,7 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--add') out.add = true;
+    else if (a === '--auto-rank') out.autoRank = true;
     else if (a.startsWith('--')) out[a.slice(2)] = argv[++i];
     else out._.push(a);
   }
@@ -44,7 +45,7 @@ async function main() {
 
   let derived;
   try {
-    derived = await deriveCard(source, { name: cardName, set: args.set, number: args.number });
+    derived = await deriveCard(source, { name: cardName, set: args.set, number: args.number }, { autoRank: args.autoRank });
   } catch (err) {
     console.error(`\n✗ ${err.message}`);
     if (/CONNECT|fetch failed|ENOTFOUND|403|EAI_AGAIN/i.test(String(err))) {
@@ -59,7 +60,7 @@ async function main() {
     marketPrice: money(derived.marketPrice),
     packsPerRarityHit: derived.packsPerRarityHit,
     chaseCardsInTier: derived.chaseCardsInTier,
-    characterRank: derived.characterRank,
+    characterRank: `${derived.characterRank.toFixed(2)} (${derived._provenance.rankSource})`,
     artworkHype: derived.artworkHype,
     googleTrends: derived.googleTrends,
   });

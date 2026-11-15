@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fixture from '../src/sources/fixture.mjs';
 import { marketPriceOf, toRawCard } from '../src/sources/pokemontcg.mjs';
-import { deriveCard } from '../src/derive.mjs';
+import { deriveCard, computeCharacterPremium } from '../src/derive.mjs';
 
 test('pokemontcg parser: picks a market price and normalizes shape', () => {
   const api = {
@@ -41,4 +41,20 @@ test('deriveCard produces a fully-scored model input from source data', async ()
   // artwork override from data/overrides.json applied
   assert.equal(derived.artworkHype, 6);
   assert.equal(derived._provenance.source, 'fixture');
+});
+
+test('computeCharacterPremium: pricier printings → lower (better) rank', () => {
+  const low = computeCharacterPremium([{ marketPrice: 320 }, { marketPrice: 376 }, { marketPrice: 90 }]);
+  const high = computeCharacterPremium([{ marketPrice: 6 }, { marketPrice: 4 }]);
+  assert.ok(low >= 1 && low <= 10 && high >= 1 && high <= 10);
+  assert.ok(low < high);                 // expensive character ranks better (lower number)
+  assert.ok(Math.abs(low - 1.1) < 1.2);  // Charizard-like signal lands near the curated anchor
+  assert.equal(computeCharacterPremium([]), null); // no price signal
+});
+
+test('deriveCard --auto-rank computes character premium from printings', async () => {
+  const d = await deriveCard(fixture, { name: 'Charizard ex', set: 'Obsidian Flames', number: '223' }, { autoRank: true });
+  assert.equal(d._provenance.rankSource, 'computed');
+  // computed rank for Charizard should land in a plausible top-tier range
+  assert.ok(d.characterRank >= 1 && d.characterRank <= 3, `rank ${d.characterRank}`);
 });

@@ -34,12 +34,29 @@ function firstWord(s) {
 // Resolve a character's premium rank from the curated table (case-insensitive),
 // falling back to the configured default.
 function resolveRank(pokemon, table) {
-  if (!pokemon) return table.defaultRank;
+  if (!pokemon) return { rank: table.defaultRank, source: 'default' };
   const hit = Object.entries(table.ranks).find(([k]) => k.toLowerCase() === pokemon.toLowerCase());
-  return hit ? hit[1] : table.defaultRank;
+  return hit ? { rank: hit[1], source: 'table' } : { rank: table.defaultRank, source: 'default' };
 }
 
-export async function deriveCard(source, query) {
+// Data-driven character premium: estimate a character's rank (1 = most
+// desirable) from its own printings, using the median of its top-3 market
+// prices as the premium signal. Calibrated against the curated anchors so it is
+// consistent with the hand-set ranks: ~$400 top signal → rank ≈ 1.1 (Charizard),
+// ~$40 → ≈ 5, ~$5 → ≈ 9. Returns null when there isn't enough price signal.
+export function computeCharacterPremium(printings) {
+  const prices = (printings || [])
+    .map((p) => p.marketPrice)
+    .filter((n) => typeof n === 'number' && n > 0)
+    .sort((a, b) => b - a);
+  if (!prices.length) return null;
+  const topN = prices.slice(0, 3);
+  const median = topN.sort((a, b) => a - b)[Math.floor((topN.length - 1) / 2)];
+  const rank = 11.9 - 4.16 * Math.log10(median); // linear in log-price, from the anchors
+  return Math.min(10, Math.max(1, rank));
+}
+
+export async function deriveCard(source, query, opts = {}) {
   const [pullRates, charRanks, overrides] = await Promise.all([
     load('pullRates.json'), load('characterRanks.json'), load('overrides.json'),
   ]);
@@ -55,10 +72,25 @@ export async function deriveCard(source, query) {
     chaseCardsInTier = Math.max(1, setCards.filter((c) => c.rarity === raw.rarity).length);
   }
 
-  // Demand: character premium (curated), artwork (override/default), trends (override/default).
+  // Demand: character premium. Priority: per-card override > curated table >
+  // computed-from-printings. With opts.autoRank, computing takes precedence over
+  // the table (the table still serves as the fallback when printings are thin).
   const pokemon = raw.pokemon || firstWord(raw.name);
   const ov = overrides.byId?.[raw.sourceId] ?? {};
-  const characterRank = ov.characterRank ?? resolveRank(pokemon, charRanks);
+  const tableRank = resolveRank(pokemon, charRanks);
+  let characterRank = tableRank.rank;
+  let rankSource = tableRank.source;
+  if (ov.characterRank != null) {
+    characterRank = ov.characterRank;
+    rankSource = 'override';
+  } else if (opts.autoRank || tableRank.source === 'default') {
+    const computed = computeCharacterPremium(await source.fetchPrintings(pokemon));
+    if (computed != null) {
+      characterRank = computed;
+      rankSource = 'computed';
+    }
+  }
+
   const artworkHype = ov.artworkHype ?? RARITY_ART_DEFAULT[raw.rarity] ?? RARITY_ART_DEFAULT.default;
   const googleTrends = ov.googleTrends ?? 5;
 
@@ -76,7 +108,7 @@ export async function deriveCard(source, query) {
     characterRank,
     artworkHype,
     googleTrends,
-    _provenance: { source: source.name, sourceId: raw.sourceId, pokemon },
+    _provenance: { source: source.name, sourceId: raw.sourceId, pokemon, rankSource },
   };
 }
 

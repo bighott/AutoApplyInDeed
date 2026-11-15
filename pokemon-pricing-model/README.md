@@ -72,8 +72,10 @@ What the pipeline derives from a raw card (`src/derive.mjs`):
 - **packsPerRarityHit** — rarity → pull-rate heuristic (`data/pullRates.json`);
   no public API exposes real pull rates, so these are editable estimates.
 - **chaseCardsInTier** — counted live from the set's rarity composition.
-- **characterRank** — curated cross-set premium (`data/characterRanks.json`),
-  with a default for unlisted Pokémon.
+- **characterRank** — curated cross-set premium (`data/characterRanks.json`).
+  For Pokémon not in the table (or with `--auto-rank` for all), it's **computed
+  from the character's own printings** — the median of its top market prices,
+  calibrated against the curated anchors (≈$400 top signal → rank ≈ 1.1).
 - **artworkHype** — subjective, so it can't be scraped: set it per card in
   `data/overrides.json`, else a rarity-based default is used.
 - **googleTrends** — override or a neutral default.
